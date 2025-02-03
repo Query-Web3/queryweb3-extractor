@@ -13,6 +13,8 @@ model Block {
   hash       String
   timestamp  DateTime    @default(now())
   extrinsics Extrinsic[]
+
+  @@map("acala_block")
 }
 
 model Extrinsic {
@@ -22,4 +24,6 @@ model Extrinsic {
   method   String   @db.Text
   signer   String?
   block    Block    @relation(fields: [blockId], references: [id])
+
+  @@map("acala_extrinsic")
 }
