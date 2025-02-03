@@ -1,0 +1,25 @@
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Block {
+  id         Int         @id @default(autoincrement())
+  number     Int
+  hash       String
+  timestamp  DateTime    @default(now())
+  extrinsics Extrinsic[]
+}
+
+model Extrinsic {
+  id       Int      @id @default(autoincrement())
+  blockId  Int
+  index    Int
+  method   String   @db.Text
+  signer   String?
+  block    Block    @relation(fields: [blockId], references: [id])
+}
