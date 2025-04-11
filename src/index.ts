@@ -3,6 +3,7 @@ dotenv.config();
 import { ApiPromise, WsProvider } from '@polkadot/api';
 import { options } from '@acala-network/api';
 import { PrismaClient } from '@prisma/client';
+import type { EventRecord } from '@polkadot/types/interfaces';
 
 const prisma = new PrismaClient();
 
@@ -19,14 +20,23 @@ async function processBlock() {
     const header = await api.rpc.chain.getHeader();
     console.log(`Connected to Acala network - Block Number: ${header.number}, Block Hash: ${header.hash}`);
     
-    // 获取块详情，包括extrinsics
+    // 获取块详情，包括extrinsics和events
     const signedBlock = await api.rpc.chain.getBlock(header.hash);
+    const events = await api.query.system.events.at(header.hash);
     
     // 处理extrinsics数据
-    const extrinsics = signedBlock.block.extrinsics.map((ext: any, index: number) => ({
-        index: index,
-        method: ext.method.toString(),
-        signer: ext.signer ? ext.signer.toString() : null
+    const extrinsics = await Promise.all(signedBlock.block.extrinsics.map(async (ext: any, index: number) => {
+        // 获取交易费用
+        const paymentInfo = await ext.paymentInfo(ext.signer);
+        
+        return {
+            index: index,
+            method: ext.method.toString(),
+            signer: ext.signer ? ext.signer.toString() : null,
+            fee: paymentInfo.partialFee.toString(),
+            status: 'pending', // 初始状态
+            params: ext.method.toHuman()
+        };
     }));
     
     // 将块数据保存到MySQL数据库中
@@ -40,15 +50,40 @@ async function processBlock() {
     
     // 将extrinsics数据保存到MySQL数据库中
     if (extrinsics.length > 0) {
-      const extrinsicResult = await prisma.extrinsic.createMany({
-        data: extrinsics.map(ext => ({
-          blockId: blockRecord.id,
-          index: ext.index,
-          method: ext.method,
-          signer: ext.signer
-        }))
-      });
-      console.log('Extrinsics saved:', extrinsicResult);
+      const createdExtrinsics = await Promise.all(extrinsics.map(async ext => {
+        return await prisma.extrinsic.create({
+          data: {
+            blockId: blockRecord.id,
+            index: ext.index,
+            method: ext.method,
+            signer: ext.signer,
+            fee: ext.fee,
+            status: ext.status,
+            params: ext.params
+          }
+        });
+      }));
+      console.log('Extrinsics saved:', createdExtrinsics.length);
+      
+      // 处理并保存事件数据
+      const eventRecords = await Promise.all((events as any).map(async (record: any, index: number) => {
+        const { event, phase } = record;
+        const extrinsicId = phase.isApplyExtrinsic
+          ? createdExtrinsics[phase.asApplyExtrinsic.toNumber()]?.id
+          : null;
+          
+        return await prisma.event.create({
+          data: {
+            blockId: blockRecord.id,
+            extrinsicId,
+            index,
+            section: event.section,
+            method: event.method,
+            data: event.data.toHuman()
+          }
+        });
+      }));
+      console.log('Events saved:', eventRecords.length);
     }
     
     // 断开API连接

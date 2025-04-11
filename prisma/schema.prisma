@@ -13,6 +13,7 @@ model Block {
   hash       String
   timestamp  DateTime    @default(now())
   extrinsics Extrinsic[]
+  events     Event[]
 
   @@map("acala_block")
 }
@@ -23,7 +24,25 @@ model Extrinsic {
   index    Int
   method   String   @db.Text
   signer   String?
+  fee      String?
+  status   String?
+  params   Json?
   block    Block    @relation(fields: [blockId], references: [id])
+  events   Event[]
 
   @@map("acala_extrinsic")
+}
+
+model Event {
+  id          Int       @id @default(autoincrement())
+  blockId     Int
+  extrinsicId Int?
+  index       Int
+  section     String
+  method      String
+  data        Json?
+  block       Block     @relation(fields: [blockId], references: [id])
+  extrinsic   Extrinsic? @relation(fields: [extrinsicId], references: [id])
+
+  @@map("acala_event")
 }

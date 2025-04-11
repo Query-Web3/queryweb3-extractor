@@ -12,6 +12,7 @@
   "dependencies": {
     "@acala-network/api": "5.1.2-7",
     "@polkadot/api": "^10.13.1",
+    "@polkadot/types": "^10.13.1",
     "@prisma/client": "^4.16.2",
     "dotenv": "^16.4.7"
   },
