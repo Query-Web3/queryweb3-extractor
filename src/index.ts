@@ -4,12 +4,16 @@ import { ApiPromise, WsProvider } from '@polkadot/api';
 import { options } from '@acala-network/api';
 import { PrismaClient } from '@prisma/client';
 import type { EventRecord } from '@polkadot/types/interfaces';
+import { v4 as uuidv4 } from 'uuid';
 
 const prisma = new PrismaClient();
 
 const INTERVAL_MS = process.env.INTERVAL_MS ? Number(process.env.INTERVAL_MS) : 3600000;
 
 async function processBlock() {
+    const batchId = uuidv4();
+    console.log(`Starting batch with ID: ${batchId}`);
+    
     // 通过WebSocket连接Acala网络
     const wsProvider = new WsProvider('wss://acala-rpc.aca-api.network');
     const provider = new WsProvider('wss://karura.api.onfinality.io/public-ws');
@@ -43,7 +47,8 @@ async function processBlock() {
     const blockRecord = await prisma.block.create({
       data: {
         number: header.number.toNumber(),
-        hash: header.hash.toString()
+        hash: header.hash.toString(),
+        batchId
       }
     });
     console.log('Block saved:', blockRecord);
@@ -59,7 +64,8 @@ async function processBlock() {
             signer: ext.signer,
             fee: ext.fee,
             status: ext.status,
-            params: ext.params
+            params: ext.params,
+            batchId
           }
         });
       }));
@@ -79,7 +85,8 @@ async function processBlock() {
             index,
             section: event.section,
             method: event.method,
-            data: event.data.toHuman()
+            data: event.data.toHuman(),
+            batchId
           }
         });
       }));

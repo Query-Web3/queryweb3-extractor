@@ -12,6 +12,7 @@ model Block {
   number     Int
   hash       String
   timestamp  DateTime    @default(now())
+  batchId    String
   extrinsics Extrinsic[]
   events     Event[]
 
@@ -27,6 +28,7 @@ model Extrinsic {
   fee      String?
   status   String?
   params   Json?
+  batchId  String
   block    Block    @relation(fields: [blockId], references: [id])
   events   Event[]
 
@@ -41,6 +43,7 @@ model Event {
   section     String
   method      String
   data        Json?
+  batchId     String
   block       Block     @relation(fields: [blockId], references: [id])
   extrinsic   Extrinsic? @relation(fields: [extrinsicId], references: [id])
 
