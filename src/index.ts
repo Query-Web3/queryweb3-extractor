@@ -30,14 +30,20 @@ async function processBlock() {
     
     // 处理extrinsics数据
     const extrinsics = await Promise.all(signedBlock.block.extrinsics.map(async (ext: any, index: number) => {
-        // 获取交易费用
-        const paymentInfo = await ext.paymentInfo(ext.signer);
+        let fee = '0';
+        try {
+            // 尝试获取交易费用
+            const paymentInfo = await api.tx(ext.method).paymentInfo(ext.signer);
+            fee = paymentInfo.partialFee.toString();
+        } catch (e) {
+            // 静默处理错误，使用默认值0
+        }
         
         return {
             index: index,
             method: ext.method.toString(),
             signer: ext.signer ? ext.signer.toString() : null,
-            fee: paymentInfo.partialFee.toString(),
+            fee,
             status: 'pending', // 初始状态
             params: ext.method.toHuman()
         };
@@ -104,7 +110,7 @@ async function run() {
         } catch (e) {
             console.error(e);
         }
-        console.log(`等待 ${INTERVAL_MS / 3600000} 小时后继续运行...`);
+        console.log(`Wait for <${INTERVAL_MS / 3600000}> hours to run next batch...`);
         await new Promise(resolve => setTimeout(resolve, INTERVAL_MS));
     }
 }
