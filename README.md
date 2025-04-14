@@ -39,9 +39,43 @@ A tool to extract and store detailed transaction information from Acala network.
 - blockId: Reference to block
 - extrinsicId: Reference to transaction (nullable)
 - index: Event index
-- section: Event section
-- method: Event method
+- section: Event section (e.g. system, balances, dex, homa, incentives, etc.)
+- method: Event method (e.g. Transfer for balances section, Swap for dex section, etc.)
 - data: Event data (JSON)
+  
+### Event Section and Method Details
+
+The `section` and `method` fields in the event table represent the module and event type from the Acala chain. These values are dynamic and depend on the chain's runtime modules. Here are some common sections and their methods:
+
+#### System Events (section: 'system')
+- ExtrinsicSuccess
+- ExtrinsicFailed
+- NewAccount
+- KilledAccount
+
+#### Balances Events (section: 'balances')
+- Transfer
+- Deposit
+- Withdraw
+- Endowed
+
+#### DEX Events (section: 'dex')
+- Swap
+- AddLiquidity
+- RemoveLiquidity
+- TradingPairCreated
+
+#### Homa Events (section: 'homa')
+- Minted
+- RequestedRedeem
+- Redeemed
+
+#### Incentives Events (section: 'incentives')
+- Deposited
+- Withdrawn
+- Claimed
+
+Note: The actual available sections and methods depend on the Acala runtime version and configuration. For the most up-to-date list, refer to the [Acala documentation](https://wiki.acala.network/).
 
 ## Installation
 
