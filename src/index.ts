@@ -2,7 +2,7 @@ import dotenv from 'dotenv';
 dotenv.config();
 import { ApiPromise, WsProvider } from '@polkadot/api';
 import { options } from '@acala-network/api';
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, BatchStatus } from '@prisma/client';
 import type { EventRecord } from '@polkadot/types/interfaces';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -10,9 +10,10 @@ const prisma = new PrismaClient();
 
 const INTERVAL_MS = process.env.INTERVAL_MS ? Number(process.env.INTERVAL_MS) : 3600000;
 
-async function processBlock() {
+async function processBlock(batchLog?: {id: number}) {
     const batchId = uuidv4();
     console.log(`Starting batch with ID: ${batchId}`);
+    
     
     // 通过WebSocket连接Acala网络
     const wsProvider = new WsProvider('wss://acala-rpc.aca-api.network');
@@ -101,14 +102,44 @@ async function processBlock() {
     
     // 断开API连接
     await api.disconnect();
+    
+    // 更新batch日志状态为成功
+    await prisma.batchLog.update({
+      where: { id: batchLog!.id },
+      data: {
+        endTime: new Date(),
+        status: BatchStatus.SUCCESS
+      }
+    });
 }
 
 async function run() {
     while (true) {
+        let batchLog;
         try {
-            await processBlock();
+            // 创建batch日志记录
+            batchLog = await prisma.batchLog.create({
+              data: {
+                batchId: uuidv4(),
+                status: BatchStatus.RUNNING
+              }
+            });
+            
+            await processBlock(batchLog!);
         } catch (e) {
             console.error(e);
+            
+            // 更新batch日志状态为失败并增加重试次数
+            if (batchLog) {
+              await prisma.batchLog.update({
+                where: { id: batchLog.id },
+                data: {
+                  endTime: new Date(),
+                  status: BatchStatus.FAILED,
+                  retryCount: { increment: 1 }
+                }
+              });
+            }
         }
         console.log(`Wait for <${INTERVAL_MS / 3600000}> hours to run next batch...`);
         await new Promise(resolve => setTimeout(resolve, INTERVAL_MS));

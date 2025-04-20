@@ -19,6 +19,23 @@ model Block {
   @@map("acala_block")
 }
 
+enum BatchStatus {
+  FAILED     @map("0")
+  SUCCESS    @map("1")
+  RUNNING    @map("2")
+}
+
+model BatchLog {
+  id         Int         @id @default(autoincrement())
+  batchId    String
+  startTime  DateTime    @default(now())
+  endTime    DateTime?
+  status     BatchStatus @default(RUNNING)
+  retryCount Int         @default(0)
+
+  @@map("acala_batchlog")
+}
+
 model Extrinsic {
   id       Int      @id @default(autoincrement())
   blockId  Int
