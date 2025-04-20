@@ -2,6 +2,19 @@
 
 A tool to extract and store detailed transaction information from Acala network.
 
+## Table of Contents
+- [Features](#features)
+- [Database Schema](#database-schema)
+  - [Block Table](#block-table-acala_block)
+  - [Batch Log Table](#batch-log-table-acala_batchlog)
+  - [Extrinsic Table](#extrinsic-table-acala_extrinsic)
+  - [Event Table](#event-table-acala_event)
+  - [Newly Added Tables](#newly-added-tables-token-and-yield-statistics)
+  - [Event Section Details](#event-section-and-method-details)
+- [Installation](#installation)
+- [Usage](#usage)
+- [License](#license)
+
 ## Features
 
 - Fetches block data including:
@@ -170,12 +183,24 @@ npm run build
 
 ## Usage
 
+### Main Commands
+
 Run the extractor:
 ```bash
 npm start
 ```
 
-Configuration options (in `.env`):
+Extract data from Acala network:
+```bash
+npm run extract
+```
+
+Transform raw data to dimensional models:
+```bash
+npm run transform
+```
+
+### Configuration options (in `.env`):
 - `INTERVAL_MS`: Polling interval in milliseconds (default: 3600000 - 1 hour)
 - `ACALA_RPC_URL`: Acala network RPC endpoint (default: wss://acala-rpc.aca-api.network)
 - `KARURA_RPC_URL`: Karura network RPC endpoint (default: wss://karura.api.onfinality.io/public-ws)
