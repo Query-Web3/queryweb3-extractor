@@ -33,6 +33,9 @@ export async function transformData() {
     console.log('Starting data transformation from Acala to DIM tables...');
     
     try {
+        // Ensure basic dimension data exists
+        //await initDimensionTables();
+        
         // Ensure basic dimension data (chain information) exists.
         // If the record doesn't exist, create it; otherwise, leave it unchanged.
         await (prisma as any).dimChain.upsert({
@@ -152,18 +155,127 @@ export async function transformData() {
             }
         }
 
-        // Log completion
+        // -------------------- Token Data Transformation --------------------
+        // Transform token data by querying the extrinsic table.
+        // Find all records where the method is 'tokens.transfer' and deduplicate results based on the 'params' field.
+        const tokens = await prisma.extrinsic.findMany({
+            where: {
+                // Filter records with the method 'tokens.transfer'
+                method: 'tokens.transfer'
+            },
+            // Deduplicate records by the 'params' field
+            distinct: ['params']
+        });
+
+        // Iterate through each token-related record retrieved from the database
+        for (const token of tokens) {
+            try {
+                // Cast the 'params' field of the current token record to the TokenParams type
+                const params = token.params as TokenParams;
+                // Check if the 'currencyId' field exists in the 'params' object
+                if (params?.currencyId) {
+                    // Ensure that the corresponding token dimension data exists in the 'dimToken' table.
+                    // If the record doesn't exist, create a new one; otherwise, leave it unchanged.
+                    await (prisma as any).dimToken.upsert({
+                        // Query condition to find the record by chain ID and token address
+                        where: {
+                            chainId_address: {
+                                chainId: 1,
+                                address: params.currencyId
+                            }
+                        },
+                        // If the record exists, perform no update operations
+                        update: {},
+                        // If the record doesn't exist, create a new token information record
+                        create: {
+                            chainId: 1,
+                            address: params.currencyId,
+                            // Token symbol, convert 'currencyId' to uppercase
+                            symbol: params.currencyId.toUpperCase(),
+                            // Token name, use 'currencyId' directly
+                            name: params.currencyId,
+                            // Token decimals, set the default value to 18
+                            decimals: 18,
+                            // Asset type ID, set the default value to 1
+                            assetTypeId: 1
+                        }
+                    });
+                }
+            } catch (e) {
+                // Log the failure to process a token record, including the failed record and error information
+                console.error('Failed to process token:', token, e);
+            }
+        }
+
+        // Log the completion of the data transformation process
         console.log('Data transformation completed');
     } catch (e) {
-        // Log an error message if the entire data transformation process fails.
-        // Include the error information in the log.
+        // Log the failure of the data transformation, including error information
         console.error('Transform failed:', e);
-        // Rethrow the error so that the calling function can handle it
+        // Rethrow the error for the upper caller to handle
         throw e;
     }
 }
 
+async function initDimensionTables() {
+    // Initialize asset types
+    await (prisma as any).dimAssetType.upsert({
+        where: { name: 'Native' },
+        update: {},
+        create: { name: 'Native' }
+    });
+    await (prisma as any).dimAssetType.upsert({
+        where: { name: 'Stablecoin' },
+        update: {},
+        create: { name: 'Stablecoin' }
+    });
+    await (prisma as any).dimAssetType.upsert({
+        where: { name: 'LP Token' },
+        update: {},
+        create: { name: 'LP Token' }
+    });
+
+    // Initialize return types
+    await (prisma as any).dimReturnType.upsert({
+        where: { name: 'Staking' },
+        update: {},
+        create: { name: 'Staking' }
+    });
+    await (prisma as any).dimReturnType.upsert({
+        where: { name: 'Lending' },
+        update: {},
+        create: { name: 'Lending' }
+    });
+    await (prisma as any).dimReturnType.upsert({
+        where: { name: 'DEX Yield' },
+        update: {},
+        create: { name: 'DEX Yield' }
+    });
+
+    // Initialize stat cycles
+    await (prisma as any).dimStatCycle.upsert({
+        where: { name: 'Daily' },
+        update: {},
+        create: { name: 'Daily', days: 1 }
+    });
+    await (prisma as any).dimStatCycle.upsert({
+        where: { name: 'Weekly' },
+        update: {},
+        create: { name: 'Weekly', days: 7 }
+    });
+    await (prisma as any).dimStatCycle.upsert({
+        where: { name: 'Monthly' },
+        update: {},
+        create: { name: 'Monthly', days: 30 }
+    });
+}
+
 async function upsertToken(currencyId: string) {
+    // Get or create default asset type
+    const assetType = await (prisma as any).dimAssetType.findFirst({
+        where: { name: currencyId.startsWith('LP-') ? 'LP Token' : 'Native' }
+    });
+
     await (prisma as any).dimToken.upsert({
         where: {
             chainId_address: {
@@ -178,7 +290,7 @@ async function upsertToken(currencyId: string) {
             symbol: currencyId.toUpperCase(),
             name: currencyId,
             decimals: 18,
-            assetTypeId: 1
+            assetTypeId: assetType.id
         }
     });
 }
