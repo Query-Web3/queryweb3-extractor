@@ -1,29 +1,32 @@
 {
   "name": "acala-data-extractor",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "从Acala网络获取链数据并存入MySQL数据库",
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc",
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
     "start": "node dist/index.js",
-    "prisma": "prisma"
+    "prisma": "prisma",
+    "prisma:generate": "rm -rf node_modules/.prisma/client && npx prisma generate"
   },
   "dependencies": {
     "@acala-network/api": "5.1.2-7",
     "@polkadot/api": "^10.13.1",
     "@polkadot/types": "^10.13.1",
     "@prisma/client": "^6.6.0",
+    "@types/commander": "^2.12.5",
+    "commander": "^13.1.0",
     "dotenv": "^16.5.0",
     "uuid": "^9.0.1"
   },
   "devDependencies": {
     "@types/dotenv": "^8.2.3",
     "@types/node": "^22.14.1",
-    "@types/uuid": "^9.0.7",
+    "@types/uuid": "^9.0.8",
     "prisma": "^6.6.0",
     "ts-node-dev": "^2.0.0",
-    "typescript": "^5.1.0"
+    "typescript": "^5.8.3"
   },
   "license": "MIT"
 }
