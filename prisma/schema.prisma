@@ -20,9 +20,9 @@ model Block {
 }
 
 enum BatchStatus {
-  FAILED     @map("0")
-  SUCCESS    @map("1")
-  RUNNING    @map("2")
+  FAILED  @map("0")
+  SUCCESS @map("1")
+  RUNNING @map("2")
 }
 
 model BatchLog {
@@ -37,23 +37,23 @@ model BatchLog {
 }
 
 model Extrinsic {
-  id       Int      @id @default(autoincrement())
-  blockId  Int
-  index    Int
-  method   String   @db.Text
-  signer   String?
-  fee      String?
-  status   String?
-  params   Json?
-  batchId  String
-  block    Block    @relation(fields: [blockId], references: [id])
-  events   Event[]
+  id      Int     @id @default(autoincrement())
+  blockId Int
+  index   Int
+  method  String  @db.Text
+  signer  String?
+  fee     String?
+  status  String?
+  params  Json?
+  batchId String
+  block   Block   @relation(fields: [blockId], references: [id])
+  events  Event[]
 
   @@map("acala_extrinsic")
 }
 
 model Event {
-  id          Int       @id @default(autoincrement())
+  id          Int        @id @default(autoincrement())
   blockId     Int
   extrinsicId Int?
   index       Int
@@ -61,39 +61,39 @@ model Event {
   method      String
   data        Json?
   batchId     String
-  block       Block     @relation(fields: [blockId], references: [id])
+  block       Block      @relation(fields: [blockId], references: [id])
   extrinsic   Extrinsic? @relation(fields: [extrinsicId], references: [id])
 
   @@map("acala_event")
 }
 
 model DimChain {
-  id        Int      @id @default(autoincrement())
-  name      String   @db.VarChar(50)
+  id        Int        @id @default(autoincrement())
+  name      String     @db.VarChar(50)
   chainId   Int
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
+  createdAt DateTime   @default(now()) @map("created_at")
+  updatedAt DateTime   @default(now()) @updatedAt @map("updated_at")
+  tokens    DimToken[]
 
   @@map("dim_chains")
-  @@comment("区块链网络信息表")
 }
 
 model DimAssetType {
-  id        Int      @id @default(autoincrement())
-  name      String   @db.VarChar(50) @unique
-  createdAt DateTime @default(now()) @map("created_at")
+  id        Int        @id @default(autoincrement())
+  name      String     @unique @db.VarChar(50)
+  createdAt DateTime   @default(now()) @map("created_at")
+  tokens    DimToken[]
 
   @@map("dim_asset_types")
-  @@comment("资产类型表")
 }
 
 model DimReturnType {
-  id        Int      @id @default(autoincrement())
-  name      String   @db.VarChar(50) @unique
-  createdAt DateTime @default(now()) @map("created_at")
+  id         Int             @id @default(autoincrement())
+  name       String          @unique @db.VarChar(50)
+  createdAt  DateTime        @default(now()) @map("created_at")
+  yieldStats FactYieldStat[]
 
   @@map("dim_return_types")
-  @@comment("收益类型表")
 }
 
 model DimToken {
@@ -107,59 +107,57 @@ model DimToken {
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @default(now()) @updatedAt @map("updated_at")
 
-  chain       DimChain    @relation(fields: [chainId], references: [id])
-  assetType   DimAssetType @relation(fields: [assetTypeId], references: [id])
+  chain      DimChain             @relation(fields: [chainId], references: [id])
+  assetType  DimAssetType         @relation(fields: [assetTypeId], references: [id])
+  dailyStats FactTokenDailyStat[]
+  yieldStats FactYieldStat[]
 
   @@unique([chainId, address])
   @@map("dim_tokens")
-  @@comment("代币基础信息表")
 }
 
 model FactTokenDailyStat {
-  id         BigInt    @id @default(autoincrement())
-  tokenId    Int
-  date       DateTime
-  volume     Float     @db.Decimal(36, 18)
-  volumeUsd  Float     @db.Decimal(36, 18) @map("volume_usd")
-  txnsCount  Int       @map("txns_count")
-  priceUsd   Float     @db.Decimal(36, 18) @map("price_usd")
-  volumeYoy  Float?    @db.Decimal(10, 2) @map("volume_yoy")
-  volumeQoq  Float?    @db.Decimal(10, 2) @map("volume_qoq")
-  txnsYoy    Float?    @db.Decimal(10, 2) @map("txns_yoy")
-  createdAt  DateTime  @default(now()) @map("created_at")
+  id        BigInt   @id @default(autoincrement())
+  tokenId   Int
+  date      DateTime
+  volume    Decimal  @db.Decimal(36, 18)
+  volumeUsd Decimal  @map("volume_usd") @db.Decimal(36, 18)
+  txnsCount Int      @map("txns_count")
+  priceUsd  Decimal  @map("price_usd") @db.Decimal(36, 18)
+  volumeYoy Decimal? @map("volume_yoy") @db.Decimal(10, 2)
+  volumeQoq Decimal? @map("volume_qoq") @db.Decimal(10, 2)
+  txnsYoy   Decimal? @map("txns_yoy") @db.Decimal(10, 2)
+  createdAt DateTime @default(now()) @map("created_at")
 
-  token      DimToken  @relation(fields: [tokenId], references: [id])
+  token DimToken @relation(fields: [tokenId], references: [id])
 
   @@unique([tokenId, date])
   @@map("fact_token_daily_stats")
-  @@comment("代币每日统计数据表")
 }
 
 model FactYieldStat {
-  id           BigInt    @id @default(autoincrement())
+  id           BigInt   @id @default(autoincrement())
   tokenId      Int
   returnTypeId Int
-  poolAddress  String    @db.VarChar(42)
+  poolAddress  String   @db.VarChar(42)
   date         DateTime
-  apy          Float     @db.Decimal(10, 2)
-  tvl          Float     @db.Decimal(36, 18)
-  tvlUsd       Float     @db.Decimal(36, 18) @map("tvl_usd")
-  createdAt    DateTime  @default(now()) @map("created_at")
+  apy          Decimal  @db.Decimal(10, 2)
+  tvl          Decimal  @db.Decimal(36, 18)
+  tvlUsd       Decimal  @map("tvl_usd") @db.Decimal(36, 18)
+  createdAt    DateTime @default(now()) @map("created_at")
 
-  token        DimToken     @relation(fields: [tokenId], references: [id])
-  returnType   DimReturnType @relation(fields: [returnTypeId], references: [id])
+  token      DimToken      @relation(fields: [tokenId], references: [id])
+  returnType DimReturnType @relation(fields: [returnTypeId], references: [id])
 
   @@unique([tokenId, poolAddress, date])
   @@map("fact_yield_stats")
-  @@comment("收益率数据表")
 }
 
 model DimStatCycle {
   id        Int      @id @default(autoincrement())
-  name      String   @db.VarChar(20) @unique
+  name      String   @unique @db.VarChar(20)
   days      Int
   createdAt DateTime @default(now()) @map("created_at")
 
   @@map("dim_stat_cycles")
-  @@comment("统计周期表")
 }
