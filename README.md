@@ -200,6 +200,30 @@ Transform raw data to dimensional models:
 npm run transform
 ```
 
+### Using PM2 for Production
+
+To run the extract and transform processes as background services using PM2:
+
+1. Install PM2 globally (if not already installed):
+```bash
+npm install -g pm2
+```
+
+2. Start services process:
+```bash
+./start_service.sh
+```
+
+3. Check process status:
+```bash
+pm2 list
+```
+
+4. View logs:
+```bash
+pm2 logs
+```
+
 ### Configuration options (in `.env`):
 - `EXTRACT_INTERVAL_MS`: Extract polling interval in milliseconds (default: 3600000 - 1 hour)
 - `TRANSFORM_INTERVAL_MS`: Transform polling interval in milliseconds (default: 3600000 - 1 hour)
