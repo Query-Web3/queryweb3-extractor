@@ -5,6 +5,7 @@ datasource db {
 
 generator client {
   provider = "prisma-client-js"
+  output   = "./node_modules/@prisma/client"
 }
 
 model Block {
@@ -25,12 +26,18 @@ enum BatchStatus {
   RUNNING @map("2")
 }
 
+enum BatchType {
+  EXTRACT   @map("1")
+  TRANSFORM @map("2")
+}
+
 model BatchLog {
   id         Int         @id @default(autoincrement())
   batchId    String
   startTime  DateTime    @default(now())
   endTime    DateTime?
   status     BatchStatus @default(RUNNING)
+  type       BatchType
   retryCount Int         @default(0)
 
   @@map("acala_batchlog")

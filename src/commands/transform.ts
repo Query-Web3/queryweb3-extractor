@@ -1,4 +1,5 @@
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, BatchStatus, BatchType } from '@prisma/client';
+import { v4 as uuidv4 } from 'uuid';
 
 const prisma = new PrismaClient();
 
@@ -28,7 +29,7 @@ interface EventData {
  * Transforms data extracted from the Acala network and populates dimension (DIM) tables.
  * Handles various extrinsic methods and events to populate dimension tables.
  */
-export async function transformData() {
+export async function transformData(batchLog?: {id: number}) {
     // Log the start of the data transformation process
     console.log('Starting data transformation from Acala to DIM tables...');
     
@@ -268,6 +269,45 @@ async function initDimensionTables() {
         update: {},
         create: { name: 'Monthly', days: 30 }
     });
+}
+
+const TRANSFORM_INTERVAL_MS = process.env.TRANSFORM_INTERVAL_MS ? Number(process.env.TRANSFORM_INTERVAL_MS) : 3600000;
+
+/**
+ * Continuously runs the data transformation process at specified intervals.
+ * Creates a new batch log for each transformation attempt, updates its status upon success or failure,
+ * and retries the transformation if it fails.
+ */
+export async function runTransform() {
+    while (true) {
+        let batchLog;
+        try {
+            batchLog = await prisma.batchLog.create({
+                data: {
+                    batchId: uuidv4(),
+                    status: BatchStatus.RUNNING,
+                    type: BatchType.TRANSFORM
+                }
+            });
+            
+            await transformData(batchLog);
+        } catch (e) {
+            console.error(e);
+            
+            if (batchLog) {
+                await prisma.batchLog.update({
+                    where: { id: batchLog.id },
+                    data: {
+                        endTime: new Date(),
+                        status: BatchStatus.FAILED,
+                        retryCount: { increment: 1 }
+                    }
+                });
+            }
+        }
+        console.log(`Wait for <${TRANSFORM_INTERVAL_MS / 3600000}> hours to run next batch...`);
+        await new Promise(resolve => setTimeout(resolve, TRANSFORM_INTERVAL_MS));
+    }
 }
 
 async function upsertToken(currencyId: string) {

@@ -1,10 +1,10 @@
-import { PrismaClient, BatchStatus } from '@prisma/client';
+import { PrismaClient, BatchStatus, BatchType } from '@prisma/client';
 import { ApiPromise, WsProvider } from '@polkadot/api';
 import { options } from '@acala-network/api';
 import { v4 as uuidv4 } from 'uuid';
 
 const prisma = new PrismaClient();
-const INTERVAL_MS = process.env.INTERVAL_MS ? Number(process.env.INTERVAL_MS) : 3600000;
+const EXTRACT_INTERVAL_MS = process.env.EXTRACT_INTERVAL_MS ? Number(process.env.EXTRACT_INTERVAL_MS) : 3600000;
 
 /**
  * Extracts data from the Acala network, including blocks, extrinsics, and events,
@@ -132,7 +132,8 @@ export async function runExtract() {
             batchLog = await prisma.batchLog.create({
                 data: {
                     batchId: uuidv4(),
-                    status: BatchStatus.RUNNING
+                    status: BatchStatus.RUNNING,
+                    type: BatchType.EXTRACT
                 }
             });
             
@@ -156,8 +157,8 @@ export async function runExtract() {
             }
         }
         // Log the time to wait before starting the next extraction batch
-        console.log(`Wait for <${INTERVAL_MS / 3600000}> hours to run next batch...`);
+        console.log(`Wait for <${EXTRACT_INTERVAL_MS / 3600000}> hours to run next batch...`);
         // Pause the execution for the specified interval before starting the next extraction batch
-        await new Promise(resolve => setTimeout(resolve, INTERVAL_MS));
+        await new Promise(resolve => setTimeout(resolve, EXTRACT_INTERVAL_MS));
     }
 }

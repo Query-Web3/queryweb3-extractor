@@ -201,7 +201,8 @@ npm run transform
 ```
 
 ### Configuration options (in `.env`):
-- `INTERVAL_MS`: Polling interval in milliseconds (default: 3600000 - 1 hour)
+- `EXTRACT_INTERVAL_MS`: Extract polling interval in milliseconds (default: 3600000 - 1 hour)
+- `TRANSFORM_INTERVAL_MS`: Transform polling interval in milliseconds (default: 3600000 - 1 hour)
 - `ACALA_RPC_URL`: Acala network RPC endpoint (default: wss://acala-rpc.aca-api.network)
 - `KARURA_RPC_URL`: Karura network RPC endpoint (default: wss://karura.api.onfinality.io/public-ws)
 
