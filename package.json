@@ -11,9 +11,10 @@
     "prisma:generate": "rm -rf node_modules/.prisma/client && npx prisma generate"
   },
   "dependencies": {
-    "@acala-network/api": "^6.0.0",
-    "@polkadot/api": "^12.0.0",
-    "@polkadot/types": "^12.0.0",
+    "@acala-network/api": "^6.2.0",
+    "@polkadot/api": "^12.4.2",
+    "@polkadot/types": "^12.4.2",
+    "@polkadot/types-codec": "12.4.2",
     "@prisma/client": "^6.7.0",
     "@types/commander": "^2.12.5",
     "commander": "^13.1.0",
@@ -21,9 +22,9 @@
     "uuid": "^9.0.1"
   },
   "devDependencies": {
-    "@types/dotenv": "^8.2.3",
     "@types/node": "^22.15.3",
     "@types/uuid": "^9.0.8",
+    "postinstall": "link:node -e \"console.log('Verifying Polkadot dependencies:', require('./node_modules/@polkadot/api/package.json').version, require('./node_modules/@polkadot/types/package.json').version, require('./node_modules/@polkadot/types-codec/package.json').version)\"",
     "prisma": "^6.7.0",
     "ts-node-dev": "^2.0.0",
     "typescript": "^5.8.3"

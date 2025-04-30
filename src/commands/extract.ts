@@ -1,4 +1,5 @@
-import { PrismaClient, BatchStatus, BatchType } from '@prisma/client';
+import { PrismaClient } from '@prisma/client';
+import { BatchStatus, BatchType } from '../types/prisma';
 import { ApiPromise, WsProvider } from '@polkadot/api';
 import { options } from '@acala-network/api';
 import { v4 as uuidv4 } from 'uuid';
@@ -17,22 +18,47 @@ export async function extractData(batchLog?: {id: number}) {
     const batchId = uuidv4();
     console.log(`Starting batch with ID: ${batchId}`);
     
-    // Create a WebSocket provider for the Acala network (Note: this provider is declared but not used)
-    // Use recommended RPC endpoints
-    const provider = new WsProvider([
+    // Create a WebSocket provider with multiple endpoints and better error handling
+    const endpoints = [
+        'wss://acala-rpc.aca-api.network', // Fallback endpoint
         'wss://karura-rpc.dwellir.com',
         'wss://karura.polkawallet.io'
-    ]);
+    ];
     
-    // Initialize API with error handling
-    let api;
-    try {
-        api = new ApiPromise(options({ provider }));
-        await api.isReady;
-        console.log('API connection established successfully');
-    } catch (e) {
-        console.error('Failed to initialize API:', e);
-        throw new Error('API initialization failed');
+    const provider = new WsProvider(endpoints, 2500); // 2.5s timeout
+    provider.on('error', (error) => {
+        console.error('WebSocket Error:', error);
+    });
+    provider.on('connected', () => {
+        console.log('WebSocket connected to:', provider.endpoint);
+    });
+    provider.on('disconnected', () => {
+        console.log('WebSocket disconnected from:', provider.endpoint);
+    });
+    
+    // Initialize API with better error handling and reconnection
+    let api: ApiPromise | null = null;
+    let retries = 0;
+    const maxRetries = 3;
+    
+    while (retries < maxRetries) {
+        try {
+            api = await ApiPromise.create(options({ provider }));
+            await api.isReady;
+            console.log('API connection established successfully to:', provider.endpoint);
+            break;
+        } catch (e) {
+            retries++;
+            console.error(`API connection attempt ${retries}/${maxRetries} failed:`, e);
+            if (retries >= maxRetries) {
+                throw new Error(`Failed to connect after ${maxRetries} attempts`);
+            }
+            await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5s before retry
+        }
+    }
+
+    if (!api) {
+        throw new Error('API connection could not be established');
     }
     
     // Get the latest block header from the network
@@ -41,8 +67,8 @@ export async function extractData(batchLog?: {id: number}) {
     
     // Get the full block data using the block hash from the header
     const signedBlock = await api.rpc.chain.getBlock(header.hash);
-    // Get the system events at the specified block hash (Note: 'at' method is deprecated)
-    const events = await api.query.system.events.at(header.hash);
+    // Get the system events for the current block
+    const events = await api.query.system.events();
     
     // Process each extrinsic in the block to extract relevant information
     const extrinsics = await Promise.all(signedBlock.block.extrinsics.map(async (ext: any, index: number) => {
@@ -50,7 +76,7 @@ export async function extractData(batchLog?: {id: number}) {
         try {
             // Get the payment information for the extrinsic to calculate the fee
             console.log(`Getting payment info for extrinsic ${index} with signer ${ext.signer?.toString()}`);
-            const paymentInfo = await api.tx(ext.method).paymentInfo(ext.signer);
+            const paymentInfo = await api!.tx(ext.method).paymentInfo(ext.signer);
             fee = paymentInfo.partialFee.toString();
             console.log(`Payment info for extrinsic ${index}: ${JSON.stringify(paymentInfo.toHuman())}`);
         } catch (e) {
@@ -117,7 +143,7 @@ export async function extractData(batchLog?: {id: number}) {
     }
     
     // Disconnect from the network API
-    await api.disconnect();
+    await api!.disconnect();
     
     if (batchLog) {
         // Update the batch log status to success and set the end time
