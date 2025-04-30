@@ -3,6 +3,7 @@ dotenv.config();
 import { Command } from 'commander';
 import { runExtract } from './commands/extract';
 import { transformData } from './commands/transform';
+import { getBlockDetails } from './commands/block';
 import { extractDataSource } from './datasources/extractDataSource';
 import { transformDataSource } from './datasources/transformDataSource';
 
@@ -33,6 +34,26 @@ program.command('transform')
         } finally {
             if (transformDataSource.isInitialized) {
                 await transformDataSource.destroy();
+            }
+        }
+    });
+
+program.command('block')
+    .description('Show current blockchain details')
+    .action(async () => {
+        try {
+            await extractDataSource.initialize();
+            const details = await getBlockDetails();
+            console.log('Blockchain Details:');
+            console.log('Current Block:', details.currentBlock);
+            console.log('Chain Stats:', details.chainStats);
+            process.exit(0);
+        } catch (err) {
+            console.error('Error getting block details:', err);
+            process.exit(1);
+        } finally {
+            if (extractDataSource.isInitialized) {
+                await extractDataSource.destroy();
             }
         }
     });

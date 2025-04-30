@@ -207,6 +207,49 @@ Transform raw data to dimensional models:
 npm run transform
 ```
 
+Get current blockchain details:
+```bash
+npm run block
+```
+
+### Block Command Details
+
+The `block` command provides real-time blockchain information including:
+
+- Current block details:
+  - Block number
+  - Block hash
+  - Timestamp
+  - Parent hash
+- Chain information:
+  - Chain name
+  - Node name
+  - Node version
+- Chain statistics:
+  - Total blocks
+  - Finalized block number
+
+Example output:
+```json
+{
+  "currentBlock": {
+    "number": 1234567,
+    "hash": "0x123...abc",
+    "timestamp": "2025-04-30T13:42:00.000Z",
+    "parentHash": "0x456...def"
+  },
+  "chainInfo": {
+    "chain": "Acala",
+    "nodeName": "acala-node",
+    "nodeVersion": "1.2.3"
+  },
+  "chainStats": {
+    "totalBlocks": 1234567,
+    "finalizedBlock": 1234560
+  }
+}
+```
+
 ### Historical Data Extraction Options
 
 When running the extract command, you can specify:
