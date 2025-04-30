@@ -2,11 +2,11 @@
   "name": "acala-data-extractor",
   "version": "0.2.0",
   "description": "从Acala网络获取链数据并存入MySQL数据库",
-  "main": "dist/index.js",
+  "main": "dist/index.min.js",
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && esbuild dist/*.js --bundle --platform=node --outfile=dist/index.min.js --minify",
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
-    "start": "node dist/index.js"
+    "start": "node dist/index.min.js"
   },
   "dependencies": {
     "@acala-network/api": "^6.2.0",
@@ -24,6 +24,7 @@
   "devDependencies": {
     "@types/node": "^22.15.3",
     "@types/uuid": "^9.0.8",
+    "esbuild": "^0.20.2",
     "postinstall": "link:node -e \"console.log('Verifying Polkadot dependencies:', require('./node_modules/@polkadot/api/package.json').version, require('./node_modules/@polkadot/types/package.json').version, require('./node_modules/@polkadot/types-codec/package.json').version)\"",
     "ts-node-dev": "^2.0.0",
     "typescript": "^5.8.3"
