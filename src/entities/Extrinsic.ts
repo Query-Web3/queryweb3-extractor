@@ -7,7 +7,7 @@ export class Extrinsic {
   @PrimaryGeneratedColumn()
   id: number;
 
-  @Column({ name: 'block_id' })
+  @Column()
   blockId: number;
 
   @Column()
@@ -28,7 +28,7 @@ export class Extrinsic {
   @Column({ type: 'json', nullable: true })
   params?: any;
 
-  @Column({ name: 'batch_id' })
+  @Column()
   batchId: string;
 
   @ManyToOne(() => Block, (block) => block.extrinsics)

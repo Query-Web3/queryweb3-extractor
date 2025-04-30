@@ -3,34 +3,43 @@ dotenv.config();
 import { Command } from 'commander';
 import { runExtract } from './commands/extract';
 import { transformData } from './commands/transform';
-import { PrismaClient } from '@prisma/client';
+import { extractDataSource } from './datasources/extractDataSource';
+import { transformDataSource } from './datasources/transformDataSource';
 
-const prisma = new PrismaClient();
 const program = new Command();
 
 program
     .name('acala-data-extractor')
     .description('CLI for extracting and transforming Acala blockchain data')
-    .version('0.1.0');
+    .version('0.2.0');
 
 program.command('extract')
     .description('Extract raw data from Acala blockchain')
     .action(async () => {
-        await runExtract().finally(async () => {
-            await prisma.$disconnect();
-        });
+        try {
+            await runExtract();
+        } finally {
+            if (extractDataSource.isInitialized) {
+                await extractDataSource.destroy();
+            }
+        }
     });
 
 program.command('transform')
     .description('Transform extracted Acala data to DIM tables')
     .action(async () => {
-        await transformData().finally(async () => {
-            await prisma.$disconnect();
-        });
+        try {
+            await transformData();
+        } finally {
+            if (transformDataSource.isInitialized) {
+                await transformDataSource.destroy();
+            }
+        }
     });
 
 program.parseAsync(process.argv).catch(async (err: Error) => {
     console.error(err);
-    await prisma.$disconnect();
+    if (extractDataSource.isInitialized) await extractDataSource.destroy();
+    if (transformDataSource.isInitialized) await transformDataSource.destroy();
     process.exit(1);
 });

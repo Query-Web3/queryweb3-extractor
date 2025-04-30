@@ -16,13 +16,13 @@ export class BatchLog {
   @PrimaryGeneratedColumn()
   id: number;
 
-  @Column({ name: 'batch_id' })
+  @Column()
   batchId: string;
 
-  @Column({ name: 'start_time', type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
+  @Column({ type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
   startTime: Date;
 
-  @Column({ name: 'end_time', type: 'timestamp', nullable: true })
+  @Column({ type: 'timestamp', nullable: true })
   endTime?: Date;
 
   @Column({ type: 'enum', enum: BatchStatus, default: BatchStatus.RUNNING })
@@ -31,6 +31,6 @@ export class BatchLog {
   @Column({ type: 'enum', enum: BatchType })
   type: BatchType;
 
-  @Column({ name: 'retry_count', default: 0 })
+  @Column({ default: 0 })
   retryCount: number;
 }

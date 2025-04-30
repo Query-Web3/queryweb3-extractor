@@ -7,10 +7,10 @@ export class Event {
   @PrimaryGeneratedColumn()
   id: number;
 
-  @Column({ name: 'block_id' })
+  @Column()
   blockId: number;
 
-  @Column({ name: 'extrinsic_id', nullable: true })
+  @Column({ nullable: true })
   extrinsicId?: number;
 
   @Column()
@@ -25,7 +25,7 @@ export class Event {
   @Column({ type: 'json', nullable: true })
   data?: any;
 
-  @Column({ name: 'batch_id' })
+  @Column()
   batchId: string;
 
   @ManyToOne(() => Block, (block) => block.events)

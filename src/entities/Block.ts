@@ -16,7 +16,7 @@ export class Block {
   @Column({ type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
   timestamp: Date;
 
-  @Column({ name: 'batch_id' })
+  @Column()
   batchId: string;
 
   @OneToMany(() => Extrinsic, (extrinsic) => extrinsic.block)
