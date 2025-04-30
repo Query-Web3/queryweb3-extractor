@@ -9,7 +9,7 @@ export class DimToken {
   @PrimaryGeneratedColumn()
   id: number;
 
-  @Column({ name: 'chain_id' })
+  @Column()
   chainId: number;
 
   @Column({ length: 42 })
@@ -24,7 +24,7 @@ export class DimToken {
   @Column()
   decimals: number;
 
-  @Column({ name: 'asset_type_id' })
+  @Column()
   assetTypeId: number;
 
   @Column({ name: 'created_at', type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })

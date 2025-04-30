@@ -201,28 +201,37 @@ export async function runTransform() {
     }
 }
 
-async function upsertToken(currencyId: string) {
+async function upsertToken(currencyId: any) {
     const dataSource = await initializeDataSource();
     const assetTypeRepo = dataSource.getRepository(DimAssetType);
     const tokenRepo = dataSource.getRepository(DimToken);
     
-    const assetType = await assetTypeRepo.findOne({ 
-        where: { name: currencyId.startsWith('LP-') ? 'LP Token' : 'Native' }
+    const currencyIdStr = String(currencyId);
+    let assetType = await assetTypeRepo.findOne({ 
+        where: { name: currencyIdStr.startsWith('LP-') ? 'LP Token' : 'Native' }
     });
+
+    if (!assetType) {
+        assetType = await assetTypeRepo.save({
+            name: currencyIdStr.startsWith('LP-') ? 'LP Token' : 'Native',
+            description: currencyIdStr.startsWith('LP-') ? 'Liquidity Pool Token' : 'Native Token'
+        });
+    }
 
     let token = await tokenRepo.findOne({ 
         where: { 
-            chainId: 1,
-            address: currencyId
-        }
+            chain: { id: 1 },
+            address: currencyIdStr
+        },
+        relations: ['chain']
     });
     
     if (!token) {
         token = await tokenRepo.save({
             chainId: 1,
-            address: currencyId,
-            symbol: currencyId.toUpperCase(),
-            name: currencyId,
+            address: currencyIdStr,
+            symbol: currencyIdStr.toUpperCase(),
+            name: currencyIdStr,
             decimals: 18,
             assetTypeId: assetType!.id
         });

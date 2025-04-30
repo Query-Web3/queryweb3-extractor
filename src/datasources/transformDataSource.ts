@@ -6,6 +6,9 @@ import { DimToken } from '../entities/DimToken';
 import { FactTokenDailyStat } from '../entities/FactTokenDailyStat';
 import { FactYieldStat } from '../entities/FactYieldStat';
 import { BatchLog } from '../entities/BatchLog';
+import { Extrinsic } from '../entities/Extrinsic';
+import { Block } from '../entities/Block';
+import { Event } from '../entities/Event';
 
 export const transformDataSource = new DataSource({
   type: 'mysql',
@@ -21,7 +24,10 @@ export const transformDataSource = new DataSource({
     DimToken,
     FactTokenDailyStat,
     FactYieldStat,
-    BatchLog
+    BatchLog,
+    Extrinsic,
+    Block,
+    Event
   ],
   synchronize: false,
   logging: process.env.NODE_ENV === 'development',
