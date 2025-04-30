@@ -1,10 +1,24 @@
-import { PrismaClient } from '@prisma/client';
-import { BatchStatus, BatchType } from '../types/prisma';
+import { DataSource } from 'typeorm';
+import { BatchStatus, BatchType } from '../entities/BatchLog';
+import { extractDataSource } from '../datasources/extractDataSource';
+import { Block } from '../entities/Block';
+import { Extrinsic } from '../entities/Extrinsic';
+import { Event } from '../entities/Event';
+import { BatchLog } from '../entities/BatchLog';
 import { ApiPromise, WsProvider } from '@polkadot/api';
 import { options } from '@acala-network/api';
 import { v4 as uuidv4 } from 'uuid';
 
-const prisma = new PrismaClient();
+// 初始化数据源
+let dataSource: DataSource;
+
+async function initializeDataSource() {
+  if (!dataSource?.isInitialized) {
+    dataSource = extractDataSource;
+    await dataSource.initialize();
+  }
+  return dataSource;
+}
 const EXTRACT_INTERVAL_MS = process.env.EXTRACT_INTERVAL_MS ? Number(process.env.EXTRACT_INTERVAL_MS) : 3600000;
 
 /**
@@ -73,7 +87,7 @@ export async function extractData(batchLog?: {id: number}, startBlock?: number, 
                 const header = await api.rpc.chain.getHeader(blockHash);
                 
                 // Check if block already exists in database
-                const existingBlock = await prisma.block.findFirst({
+                const existingBlock = await (await initializeDataSource()).getRepository(Block).findOne({
                     where: { number: blockNumber }
                 });
                 
@@ -97,7 +111,7 @@ export async function extractData(batchLog?: {id: number}, startBlock?: number, 
         console.log(`Connected to Acala network - Block Number: ${header.number}, Block Hash: ${header.hash}`);
         
         // Check if block already exists
-        const existingBlock = await prisma.block.findFirst({
+        const existingBlock = await (await initializeDataSource()).getRepository(Block).findOne({
             where: { number: header.number.toNumber() }
         });
         
@@ -148,19 +162,17 @@ export async function extractData(batchLog?: {id: number}, startBlock?: number, 
     }));
     
         // Create a block record in the database
-        const blockRecord = await prisma.block.create({
-            data: {
-                number: block.number,
-                hash: block.hash,
-                batchId
-            }
+        const blockRecord = await (await initializeDataSource()).getRepository(Block).save({
+            number: block.number,
+            hash: block.hash,
+            batchId
         });
     
         if (extrinsics.length > 0) {
             // Create records for each extrinsic in the database
             const createdExtrinsics = await Promise.all(extrinsics.map(async ext => {
                 // Check if extrinsic already exists
-                const existingExtrinsic = await prisma.extrinsic.findFirst({
+                const existingExtrinsic = await (await initializeDataSource()).getRepository(Extrinsic).findOne({
                     where: {
                         blockId: blockRecord.id,
                         index: ext.index
@@ -168,17 +180,15 @@ export async function extractData(batchLog?: {id: number}, startBlock?: number, 
                 });
                 
                 if (!existingExtrinsic) {
-                    return await prisma.extrinsic.create({
-                        data: {
-                            blockId: blockRecord.id,
-                            index: ext.index,
-                            method: ext.method,
-                            signer: ext.signer,
-                            fee: ext.fee,
-                            status: ext.status,
-                            params: ext.params,
-                            batchId
-                        }
+                    return await (await initializeDataSource()).getRepository(Extrinsic).save({
+                        blockId: blockRecord.id,
+                        index: ext.index,
+                        method: ext.method,
+                        signer: ext.signer,
+                        fee: ext.fee,
+                        status: ext.status,
+                        params: ext.params,
+                        batchId
                     });
                 }
                 return existingExtrinsic;
@@ -193,24 +203,22 @@ export async function extractData(batchLog?: {id: number}, startBlock?: number, 
                     : null;
                     
                 // Check if event already exists
-                const existingEvent = await prisma.event.findFirst({
+                const existingEvent = await (await initializeDataSource()).getRepository(Event).findOne({
                     where: {
-                        blockId: blockRecord.id,
+                        block: { id: blockRecord.id },
                         index: index
                     }
                 });
                 
                 if (!existingEvent) {
-                    return await prisma.event.create({
-                        data: {
-                            blockId: blockRecord.id,
-                            extrinsicId,
-                            index,
-                            section: event.section,
-                            method: event.method,
-                            data: event.data.toHuman(),
-                            batchId
-                        }
+                    return await (await initializeDataSource()).getRepository(Event).save({
+                        block: { id: blockRecord.id },
+                        extrinsic: extrinsicId ? { id: extrinsicId } : undefined,
+                        index,
+                        section: event.section,
+                        method: event.method,
+                        data: event.data.toHuman(),
+                        batchId
                     });
                 }
             }).filter(Boolean));
@@ -222,12 +230,9 @@ export async function extractData(batchLog?: {id: number}, startBlock?: number, 
     
     if (batchLog) {
         // Update the batch log status to success and set the end time
-        await prisma.batchLog.update({
-            where: { id: batchLog.id },
-            data: {
-                endTime: new Date(),
-                status: BatchStatus.SUCCESS
-            }
+        await (await initializeDataSource()).getRepository(BatchLog).update(batchLog.id, {
+            endTime: new Date(),
+            status: BatchStatus.SUCCESS
         });
     }
 }
@@ -244,12 +249,10 @@ export async function runExtract(startBlock?: number, endBlock?: number) {
         let batchLog;
         try {
             // Create a new batch log record in the database with a unique batch ID and set its status to RUNNING
-            batchLog = await prisma.batchLog.create({
-                data: {
-                    batchId: uuidv4(),
-                    status: BatchStatus.RUNNING,
-                    type: BatchType.EXTRACT
-                }
+            batchLog = await (await initializeDataSource()).getRepository(BatchLog).save({
+                batchId: uuidv4(),
+                status: BatchStatus.RUNNING,
+                type: BatchType.EXTRACT
             });
             
             // Call the extractData function with the created batch log to start the data extraction process
@@ -266,13 +269,10 @@ export async function runExtract(startBlock?: number, endBlock?: number) {
             // Check if a batch log was successfully created before attempting to update it
             if (batchLog) {
                 // Update the batch log status to FAILED, set the end time, and increment the retry count
-                await prisma.batchLog.update({
-                    where: { id: batchLog.id },
-                    data: {
-                        endTime: new Date(),
-                        status: BatchStatus.FAILED,
-                        retryCount: { increment: 1 }
-                    }
+                await (await initializeDataSource()).getRepository(BatchLog).update(batchLog.id, {
+                    endTime: new Date(),
+                    status: BatchStatus.FAILED,
+                    retryCount: batchLog.retryCount + 1
                 });
             }
         }

@@ -1,7 +1,24 @@
-import { PrismaClient, BatchStatus, BatchType } from '@prisma/client';
+import { DataSource } from 'typeorm';
+import { BatchLog, BatchStatus, BatchType } from '../entities/BatchLog';
+import { transformDataSource } from '../datasources/transformDataSource';
+import { DimChain } from '../entities/DimChain';
+import { DimAssetType } from '../entities/DimAssetType';
+import { DimReturnType } from '../entities/DimReturnType';
+import { DimToken } from '../entities/DimToken';
+import { Extrinsic } from '../entities/Extrinsic';
+import { Event } from '../entities/Event';
 import { v4 as uuidv4 } from 'uuid';
 
-const prisma = new PrismaClient();
+// 初始化数据源
+let dataSource: DataSource;
+
+async function initializeDataSource() {
+  if (!dataSource?.isInitialized) {
+    dataSource = transformDataSource;
+    await dataSource.initialize();
+  }
+  return dataSource;
+}
 
 interface TokenParams {
     currencyId?: string;
@@ -29,27 +46,21 @@ interface EventData {
  * Transforms data extracted from the Acala network and populates dimension (DIM) tables.
  * Handles various extrinsic methods and events to populate dimension tables.
  */
-export async function transformData(batchLog?: {id: number}) {
-    // Log the start of the data transformation process
+export async function transformData(batchLog?: BatchLog) {
     console.log('Starting data transformation from Acala to DIM tables...');
     
     try {
-        // Ensure basic dimension data exists
-        //await initDimensionTables();
+        const dataSource = await initializeDataSource();
         
-        // Ensure basic dimension data (chain information) exists.
-        // If the record doesn't exist, create it; otherwise, leave it unchanged.
-        await (prisma as any).dimChain.upsert({
-            // Query condition to find the record by chain name
-            where: { name: 'Acala' },
-            // If the record exists, perform no update operations
-            update: {},
-            // If the record doesn't exist, create a new chain information record
-            create: {
+        // Ensure basic dimension data exists
+        const chainRepo = dataSource.getRepository(DimChain);
+        let chain = await chainRepo.findOne({ where: { name: 'Acala' } });
+        if (!chain) {
+            chain = await chainRepo.save({
                 name: 'Acala',
                 chainId: 1
-            }
-        });
+            });
+        }
 
         // Process common extrinsic methods
         const methodsToProcess = [
@@ -61,10 +72,11 @@ export async function transformData(batchLog?: {id: number}) {
         ];
 
         for (const method of methodsToProcess) {
-            const extrinsics = await prisma.extrinsic.findMany({
-                where: { method },
-                distinct: ['params']
-            });
+            const extrinsics = await dataSource.getRepository(Extrinsic)
+                .createQueryBuilder('extrinsic')
+                .where('extrinsic.method = :method', { method })
+                .groupBy('extrinsic.params')
+                .getMany();
 
             for (const extrinsic of extrinsics) {
                 try {
@@ -81,7 +93,6 @@ export async function transformData(batchLog?: {id: number}) {
                             }
                         }
                     } else if (method.startsWith('homa.')) {
-                        // Homa methods use ACA token
                         await upsertToken('ACA');
                     }
                 } catch (e) {
@@ -101,10 +112,11 @@ export async function transformData(batchLog?: {id: number}) {
 
         for (const eventType of eventsToProcess) {
             const [section, method] = eventType.split('.');
-            const events = await prisma.event.findMany({
-                where: { section, method },
-                distinct: ['data']
-            });
+            const events = await dataSource.getRepository(Event)
+                .createQueryBuilder('event')
+                .where('event.section = :section AND event.method = :method', { section, method })
+                .groupBy('event.data')
+                .getMany();
 
             for (const event of events) {
                 try {
@@ -130,24 +142,20 @@ export async function transformData(batchLog?: {id: number}) {
 
         for (const eventType of additionalEvents) {
             const [section, method] = eventType.split('.');
-            const events = await prisma.event.findMany({
-                where: { section, method },
-                distinct: ['data']
-            });
+            const events = await dataSource.getRepository(Event)
+                .createQueryBuilder('event')
+                .where('event.section = :section AND event.method = :method', { section, method })
+                .groupBy('event.data')
+                .getMany();
 
             for (const event of events) {
                 try {
                     const data = event.data as EventData;
-                    // Handle LP tokens from DEX events
                     if (section === 'Dex' && data?.poolId) {
                         await upsertToken(`LP-${data.poolId}`);
-                    }
-                    // Handle reward tokens from Incentives events
-                    else if (section === 'Incentives' && data?.reward) {
+                    } else if (section === 'Incentives' && data?.reward) {
                         await upsertToken(data.reward);
-                    }
-                    // Default handler for other events
-                    else {
+                    } else {
                         console.log(`[INFO] Event ${eventType} received but not processed`, data);
                     }
                 } catch (e) {
@@ -156,152 +164,35 @@ export async function transformData(batchLog?: {id: number}) {
             }
         }
 
-        // -------------------- Token Data Transformation --------------------
-        // Transform token data by querying the extrinsic table.
-        // Find all records where the method is 'tokens.transfer' and deduplicate results based on the 'params' field.
-        const tokens = await prisma.extrinsic.findMany({
-            where: {
-                // Filter records with the method 'tokens.transfer'
-                method: 'tokens.transfer'
-            },
-            // Deduplicate records by the 'params' field
-            distinct: ['params']
-        });
-
-        // Iterate through each token-related record retrieved from the database
-        for (const token of tokens) {
-            try {
-                // Cast the 'params' field of the current token record to the TokenParams type
-                const params = token.params as TokenParams;
-                // Check if the 'currencyId' field exists in the 'params' object
-                if (params?.currencyId) {
-                    // Ensure that the corresponding token dimension data exists in the 'dimToken' table.
-                    // If the record doesn't exist, create a new one; otherwise, leave it unchanged.
-                    await (prisma as any).dimToken.upsert({
-                        // Query condition to find the record by chain ID and token address
-                        where: {
-                            chainId_address: {
-                                chainId: 1,
-                                address: params.currencyId
-                            }
-                        },
-                        // If the record exists, perform no update operations
-                        update: {},
-                        // If the record doesn't exist, create a new token information record
-                        create: {
-                            chainId: 1,
-                            address: params.currencyId,
-                            // Token symbol, convert 'currencyId' to uppercase
-                            symbol: params.currencyId.toUpperCase(),
-                            // Token name, use 'currencyId' directly
-                            name: params.currencyId,
-                            // Token decimals, set the default value to 18
-                            decimals: 18,
-                            // Asset type ID, set the default value to 1
-                            assetTypeId: 1
-                        }
-                    });
-                }
-            } catch (e) {
-                // Log the failure to process a token record, including the failed record and error information
-                console.error('Failed to process token:', token, e);
-            }
-        }
-
-        // Log the completion of the data transformation process
         console.log('Data transformation completed');
     } catch (e) {
-        // Log the failure of the data transformation, including error information
         console.error('Transform failed:', e);
-        // Rethrow the error for the upper caller to handle
         throw e;
     }
 }
 
-async function initDimensionTables() {
-    // Initialize asset types
-    await (prisma as any).dimAssetType.upsert({
-        where: { name: 'Native' },
-        update: {},
-        create: { name: 'Native' }
-    });
-    await (prisma as any).dimAssetType.upsert({
-        where: { name: 'Stablecoin' },
-        update: {},
-        create: { name: 'Stablecoin' }
-    });
-    await (prisma as any).dimAssetType.upsert({
-        where: { name: 'LP Token' },
-        update: {},
-        create: { name: 'LP Token' }
-    });
-
-    // Initialize return types
-    await (prisma as any).dimReturnType.upsert({
-        where: { name: 'Staking' },
-        update: {},
-        create: { name: 'Staking' }
-    });
-    await (prisma as any).dimReturnType.upsert({
-        where: { name: 'Lending' },
-        update: {},
-        create: { name: 'Lending' }
-    });
-    await (prisma as any).dimReturnType.upsert({
-        where: { name: 'DEX Yield' },
-        update: {},
-        create: { name: 'DEX Yield' }
-    });
-
-    // Initialize stat cycles
-    await (prisma as any).dimStatCycle.upsert({
-        where: { name: 'Daily' },
-        update: {},
-        create: { name: 'Daily', days: 1 }
-    });
-    await (prisma as any).dimStatCycle.upsert({
-        where: { name: 'Weekly' },
-        update: {},
-        create: { name: 'Weekly', days: 7 }
-    });
-    await (prisma as any).dimStatCycle.upsert({
-        where: { name: 'Monthly' },
-        update: {},
-        create: { name: 'Monthly', days: 30 }
-    });
-}
-
 const TRANSFORM_INTERVAL_MS = process.env.TRANSFORM_INTERVAL_MS ? Number(process.env.TRANSFORM_INTERVAL_MS) : 3600000;
 
-/**
- * Continuously runs the data transformation process at specified intervals.
- * Creates a new batch log for each transformation attempt, updates its status upon success or failure,
- * and retries the transformation if it fails.
- */
 export async function runTransform() {
     while (true) {
         let batchLog;
         try {
-            batchLog = await prisma.batchLog.create({
-                data: {
-                    batchId: uuidv4(),
-                    status: BatchStatus.RUNNING,
-                    type: BatchType.TRANSFORM
-                }
+            batchLog = await (await initializeDataSource()).getRepository(BatchLog).save({
+                batchId: uuidv4(),
+                status: BatchStatus.RUNNING,
+                type: BatchType.TRANSFORM
             });
             
             await transformData(batchLog);
         } catch (e) {
             console.error(e);
             
-            if (batchLog) {
-                await prisma.batchLog.update({
-                    where: { id: batchLog.id },
-                    data: {
-                        endTime: new Date(),
-                        status: BatchStatus.FAILED,
-                        retryCount: { increment: 1 }
-                    }
+            if (batchLog?.id) {
+                const repo = (await initializeDataSource()).getRepository(BatchLog);
+                await repo.update(batchLog.id, {
+                    endTime: new Date(),
+                    status: BatchStatus.FAILED,
+                    retryCount: (batchLog.retryCount || 0) + 1
                 });
             }
         }
@@ -311,26 +202,31 @@ export async function runTransform() {
 }
 
 async function upsertToken(currencyId: string) {
-    // Get or create default asset type
-    const assetType = await (prisma as any).dimAssetType.findFirst({
+    const dataSource = await initializeDataSource();
+    const assetTypeRepo = dataSource.getRepository(DimAssetType);
+    const tokenRepo = dataSource.getRepository(DimToken);
+    
+    const assetType = await assetTypeRepo.findOne({ 
         where: { name: currencyId.startsWith('LP-') ? 'LP Token' : 'Native' }
     });
 
-    await (prisma as any).dimToken.upsert({
-        where: {
-            chainId_address: {
-                chainId: 1,
-                address: currencyId
-            }
-        },
-        update: {},
-        create: {
+    let token = await tokenRepo.findOne({ 
+        where: { 
+            chainId: 1,
+            address: currencyId
+        }
+    });
+    
+    if (!token) {
+        token = await tokenRepo.save({
             chainId: 1,
             address: currencyId,
             symbol: currencyId.toUpperCase(),
             name: currencyId,
             decimals: 18,
-            assetTypeId: assetType.id
-        }
-    });
+            assetTypeId: assetType!.id
+        });
+    }
+    
+    return token;
 }
