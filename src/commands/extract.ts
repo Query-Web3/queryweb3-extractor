@@ -32,8 +32,40 @@ export async function extractData(batchLog?: {id: number}, startBlock?: number, 
     const batchId = uuidv4();
     console.log(`Starting batch with ID: ${batchId}`);
 
-    // If no block range specified, default to latest block only
-    const isHistorical = startBlock !== undefined && endBlock !== undefined;
+    // Initialize data source
+    const dataSource = await initializeDataSource();
+    
+    // If no block range specified, get latest block from chain and highest from DB
+    let isHistorical = startBlock !== undefined && endBlock !== undefined;
+    
+    if (!isHistorical) {
+        // Get highest block from database with proper error handling
+        let dbHighest = 0;
+        try {
+            const highestBlock = await dataSource.getRepository(Block)
+                .createQueryBuilder('block')
+                .select('MAX(block.number)', 'maxNumber')
+                .getRawOne();
+            dbHighest = highestBlock?.maxNumber || 0;
+            console.log(`Highest block in DB: ${dbHighest}`);
+        } catch (e) {
+            console.error('Error getting highest block from DB:', e);
+            dbHighest = 0;
+        }
+        
+        // Get latest block from chain
+        const provider = new WsProvider('wss://acala-rpc.aca-api.network');
+        const api = await ApiPromise.create(options({ provider }));
+        const header = await api.rpc.chain.getHeader();
+        const chainLatest = header.number.toNumber();
+        await api.disconnect();
+        
+        startBlock = dbHighest > 0 ? dbHighest + 1 : 0;
+        endBlock = chainLatest;
+        isHistorical = true;
+        
+        console.log(`Auto-determined block range: ${startBlock} to ${endBlock}`);
+    }
     
     // Create a WebSocket provider with multiple endpoints and better error handling
     const endpoints = [
@@ -80,8 +112,15 @@ export async function extractData(batchLog?: {id: number}, startBlock?: number, 
     
     let blocksToProcess = [];
     if (isHistorical) {
-        // Process historical blocks in range
-        for (let blockNumber = startBlock!; blockNumber <= endBlock!; blockNumber++) {
+        // Process historical blocks in range with batch processing
+        const BATCH_SIZE = 100; // Process 100 blocks at a time
+        let currentBatchStart = startBlock!;
+        
+        while (currentBatchStart <= endBlock!) {
+            const currentBatchEnd = Math.min(currentBatchStart + BATCH_SIZE - 1, endBlock!);
+            console.log(`Processing blocks ${currentBatchStart} to ${currentBatchEnd}`);
+            
+            for (let blockNumber = currentBatchStart; blockNumber <= currentBatchEnd; blockNumber++) {
             try {
                 const blockHash = await api.rpc.chain.getBlockHash(blockNumber);
                 const header = await api.rpc.chain.getHeader(blockHash);
@@ -103,7 +142,10 @@ export async function extractData(batchLog?: {id: number}, startBlock?: number, 
                 }
             } catch (e) {
                 console.error(`Error processing block ${blockNumber}:`, e);
+                continue;
             }
+            }
+            currentBatchStart = currentBatchEnd + 1;
         }
     } else {
         // Process latest block only (original behavior)
@@ -242,9 +284,10 @@ export async function extractData(batchLog?: {id: number}, startBlock?: number, 
  * Creates a new batch log for each extraction attempt, updates its status upon success or failure,
  * and retries the extraction if it fails.
  */
-export async function runExtract(startBlock?: number, endBlock?: number) {
+export async function runExtract(options?: {startBlock?: number, endBlock?: number}) {
     // Infinite loop to ensure the extraction process runs continuously
     while (true) {
+        const {startBlock, endBlock} = options || {};
         // Variable to hold the batch log record created for each extraction attempt
         let batchLog;
         try {

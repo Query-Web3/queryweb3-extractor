@@ -16,9 +16,14 @@ program
 
 program.command('extract')
     .description('Extract raw data from Acala blockchain')
-    .action(async () => {
+    .option('--start-block <number>', 'Starting block number', parseInt)
+    .option('--end-block <number>', 'Ending block number', parseInt)
+    .action(async (options) => {
         try {
-            await runExtract();
+            await runExtract({
+                startBlock: options.startBlock,
+                endBlock: options.endBlock
+            });
         } finally {
             if (extractDataSource.isInitialized) {
                 await extractDataSource.destroy();
