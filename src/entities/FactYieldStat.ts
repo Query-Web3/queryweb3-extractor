@@ -1,19 +1,19 @@
-import { Entity, PrimaryColumn, Column, ManyToOne } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, ManyToOne } from 'typeorm';
 import { DimToken } from './DimToken';
 import { DimReturnType } from './DimReturnType';
 
 @Entity({ name: 'fact_yield_stats' })
 export class FactYieldStat {
-  @PrimaryColumn({ type: 'bigint' })
+  @PrimaryGeneratedColumn({ type: 'bigint' })
   id: number;
 
-  @Column({ name: 'token_id' })
+  @Column()
   tokenId: number;
 
-  @Column({ name: 'return_type_id' })
+  @Column()
   returnTypeId: number;
 
-  @Column({ name: 'pool_address', length: 42 })
+  @Column({ length: 42 })
   poolAddress: string;
 
   @Column({ type: 'timestamp' })

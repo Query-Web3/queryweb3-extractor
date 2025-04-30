@@ -1,12 +1,12 @@
-import { Entity, PrimaryColumn, Column, ManyToOne } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, ManyToOne } from 'typeorm';
 import { DimToken } from './DimToken';
 
 @Entity({ name: 'fact_token_daily_stats' })
 export class FactTokenDailyStat {
-  @PrimaryColumn({ type: 'bigint' })
+  @PrimaryGeneratedColumn({ type: 'bigint' })
   id: number;
 
-  @Column({ name: 'token_id' })
+  @Column()
   tokenId: number;
 
   @Column({ type: 'timestamp' })

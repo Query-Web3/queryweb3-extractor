@@ -7,6 +7,8 @@ import { DimReturnType } from '../entities/DimReturnType';
 import { DimToken } from '../entities/DimToken';
 import { Extrinsic } from '../entities/Extrinsic';
 import { Event } from '../entities/Event';
+import { FactTokenDailyStat } from '../entities/FactTokenDailyStat';
+import { FactYieldStat } from '../entities/FactYieldStat';
 import { v4 as uuidv4 } from 'uuid';
 
 // 初始化数据源
@@ -164,6 +166,13 @@ export async function transformData(batchLog?: BatchLog) {
             }
         }
 
+        // Initialize all dimension tables
+        await initializeDimensionTables();
+        
+        // Process daily stats
+        await processTokenDailyStats();
+        await processYieldStats();
+        
         console.log('Data transformation completed');
     } catch (e) {
         console.error('Transform failed:', e);
@@ -201,23 +210,89 @@ export async function runTransform() {
     }
 }
 
+async function initializeDimensionTables() {
+    const dataSource = await initializeDataSource();
+    
+    // Initialize chain
+    const chainRepo = dataSource.getRepository(DimChain);
+    let chain = await chainRepo.findOne({ where: { name: 'Acala' } });
+    if (!chain) {
+        chain = await chainRepo.save({
+            name: 'Acala',
+            chainId: 1
+        });
+    }
+
+    // Initialize asset types
+    const assetTypeRepo = dataSource.getRepository(DimAssetType);
+    const assetTypes = [
+        { name: 'Native', description: 'Native token of the chain' },
+        { name: 'LP Token', description: 'Liquidity pool token' },
+        { name: 'Stablecoin', description: 'Stable value cryptocurrency' },
+        { name: 'Governance', description: 'Governance token' }
+    ];
+    
+    for (const type of assetTypes) {
+        let existing = await assetTypeRepo.findOne({ where: { name: type.name } });
+        if (!existing) {
+            await assetTypeRepo.save(type);
+        }
+    }
+
+    // Initialize return types
+    const returnTypeRepo = dataSource.getRepository(DimReturnType);
+    const returnTypes = [
+        { name: 'Staking', description: 'Staking rewards' },
+        { name: 'Liquidity Mining', description: 'Liquidity mining rewards' },
+        { name: 'Lending', description: 'Lending interest' }
+    ];
+    
+    for (const type of returnTypes) {
+        let existing = await returnTypeRepo.findOne({ where: { name: type.name } });
+        if (!existing) {
+            await returnTypeRepo.save(type);
+        }
+    }
+}
+
 async function upsertToken(currencyId: any) {
     const dataSource = await initializeDataSource();
     const assetTypeRepo = dataSource.getRepository(DimAssetType);
     const tokenRepo = dataSource.getRepository(DimToken);
     
     const currencyIdStr = String(currencyId);
-    let assetType = await assetTypeRepo.findOne({ 
-        where: { name: currencyIdStr.startsWith('LP-') ? 'LP Token' : 'Native' }
-    });
+    
+    // Determine token type and metadata
+    let assetTypeName = 'Native';
+    let symbol = currencyIdStr;
+    let name = currencyIdStr;
+    let decimals = 12; // Default for most Substrate chains
+    
+    if (currencyIdStr.startsWith('LP-')) {
+        assetTypeName = 'LP Token';
+        symbol = 'LP-' + currencyIdStr.split('-')[1].slice(0, 15); // Limit to 15 chars
+        name = 'Liquidity Pool ' + currencyIdStr.split('-')[1];
+    } else if (currencyIdStr === 'AUSD') {
+        assetTypeName = 'Stablecoin';
+        symbol = 'AUSD';
+        name = 'Acala Dollar';
+        decimals = 12;
+    } else if (currencyIdStr === 'ACA') {
+        symbol = 'ACA';
+        name = 'Acala';
+        decimals = 12;
+    }
 
+    // Get or create asset type
+    let assetType = await assetTypeRepo.findOne({ where: { name: assetTypeName } });
     if (!assetType) {
         assetType = await assetTypeRepo.save({
-            name: currencyIdStr.startsWith('LP-') ? 'LP Token' : 'Native',
-            description: currencyIdStr.startsWith('LP-') ? 'Liquidity Pool Token' : 'Native Token'
+            name: assetTypeName,
+            description: assetTypeName === 'LP Token' ? 'Liquidity Pool Token' : 'Native Token'
         });
     }
 
+    // Get or create token
     let token = await tokenRepo.findOne({ 
         where: { 
             chain: { id: 1 },
@@ -230,12 +305,87 @@ async function upsertToken(currencyId: any) {
         token = await tokenRepo.save({
             chainId: 1,
             address: currencyIdStr,
-            symbol: currencyIdStr.toUpperCase(),
-            name: currencyIdStr,
-            decimals: 18,
+            symbol: symbol.slice(0, 20), // Ensure within max length
+            name: name.slice(0, 100),    // Ensure within max length
+            decimals: decimals,
             assetTypeId: assetType!.id
         });
     }
     
     return token;
+}
+
+async function processYieldStats() {
+    const dataSource = await initializeDataSource();
+    const tokenRepo = dataSource.getRepository(DimToken);
+    const returnTypeRepo = dataSource.getRepository(DimReturnType);
+    const yieldStatRepo = dataSource.getRepository(FactYieldStat);
+    
+    const tokens = await tokenRepo.find();
+    const returnTypes = await returnTypeRepo.find();
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    for (const token of tokens) {
+        for (const returnType of returnTypes) {
+            const existingStat = await yieldStatRepo.findOne({
+                where: {
+                    tokenId: token.id,
+                    poolAddress: '0x0000000000000000000000000000000000000000',
+                    date: today
+                }
+            });
+
+            if (!existingStat) {
+                await yieldStatRepo.insert({
+                    tokenId: token.id,
+                    returnTypeId: returnType.id,
+                    poolAddress: '0x0000000000000000000000000000000000000000',
+                    date: today,
+                    apy: 5.0, // Placeholder
+                    tvl: 1000000.0,
+                    tvlUsd: 1000000.0
+                });
+            } else {
+                await yieldStatRepo.update(existingStat.id, {
+                    returnTypeId: returnType.id,
+                    apy: 5.0,
+                    tvl: 1000000.0,
+                    tvlUsd: 1000000.0
+                });
+            }
+        }
+    }
+}
+
+async function processTokenDailyStats() {
+    const dataSource = await initializeDataSource();
+    const tokenRepo = dataSource.getRepository(DimToken);
+    const statRepo = dataSource.getRepository(FactTokenDailyStat);
+    
+    const tokens = await tokenRepo.find();
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    for (const token of tokens) {
+        // Calculate daily stats from events
+        // This is simplified - actual implementation would aggregate from event data
+        const existingStat = await statRepo.findOne({
+            where: {
+                tokenId: token.id,
+                date: today
+            }
+        });
+
+        if (!existingStat) {
+            await statRepo.insert({
+                tokenId: token.id,
+                date: today,
+                volume: 1000.0, // Placeholder - should calculate from events
+                volumeUsd: 1000.0,
+                txnsCount: 10,
+                priceUsd: 1.0
+            });
+        }
+    }
 }
