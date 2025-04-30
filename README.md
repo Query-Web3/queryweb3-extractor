@@ -27,6 +27,8 @@ A tool to extract and store detailed transaction information from Acala network.
   - Transaction status
   - Transaction parameters
 - Captures and stores chain events associated with transactions
+- Supports fetching historical block data in specified range
+- Automatic deduplication of blocks, transactions and events
 - Stores data in MySQL database
 
 ## Database Schema
@@ -195,10 +197,33 @@ Extract data from Acala network:
 npm run extract
 ```
 
+Extract historical data (specify block range):
+```bash
+npm run extract -- --startBlock=1000000 --endBlock=1000100
+```
+
 Transform raw data to dimensional models:
 ```bash
 npm run transform
 ```
+
+### Historical Data Extraction Options
+
+When running the extract command, you can specify:
+
+- `--startBlock`: Starting block number (inclusive)
+- `--endBlock`: Ending block number (inclusive)
+
+Example:
+```bash
+# Extract blocks 1000000 to 1000100
+npm run extract -- --startBlock=1000000 --endBlock=1000100
+```
+
+Note: When extracting historical data, the process will:
+1. Only run once (not continuously)
+2. Skip any blocks that already exist in database
+3. Skip any transactions/events that already exist in database
 
 ### Using PM2 for Production
 

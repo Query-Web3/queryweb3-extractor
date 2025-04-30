@@ -13,10 +13,13 @@ const EXTRACT_INTERVAL_MS = process.env.EXTRACT_INTERVAL_MS ? Number(process.env
  * 
  * @param batchLog - Optional object containing the batch log ID. Used to update the batch status.
  */
-export async function extractData(batchLog?: {id: number}) {
+export async function extractData(batchLog?: {id: number}, startBlock?: number, endBlock?: number) {
     // Generate a unique ID for the current data extraction batch
     const batchId = uuidv4();
     console.log(`Starting batch with ID: ${batchId}`);
+
+    // If no block range specified, default to latest block only
+    const isHistorical = startBlock !== undefined && endBlock !== undefined;
     
     // Create a WebSocket provider with multiple endpoints and better error handling
     const endpoints = [
@@ -61,14 +64,64 @@ export async function extractData(batchLog?: {id: number}) {
         throw new Error('API connection could not be established');
     }
     
-    // Get the latest block header from the network
-    const header = await api.rpc.chain.getHeader();
-    console.log(`Connected to Acala network - Block Number: ${header.number}, Block Hash: ${header.hash}`);
-    
-    // Get the full block data using the block hash from the header
-    const signedBlock = await api.rpc.chain.getBlock(header.hash);
-    // Get the system events for the current block
-    const events = await api.query.system.events();
+    let blocksToProcess = [];
+    if (isHistorical) {
+        // Process historical blocks in range
+        for (let blockNumber = startBlock!; blockNumber <= endBlock!; blockNumber++) {
+            try {
+                const blockHash = await api.rpc.chain.getBlockHash(blockNumber);
+                const header = await api.rpc.chain.getHeader(blockHash);
+                
+                // Check if block already exists in database
+                const existingBlock = await prisma.block.findFirst({
+                    where: { number: blockNumber }
+                });
+                
+                if (!existingBlock) {
+                    blocksToProcess.push({
+                        number: blockNumber,
+                        hash: blockHash.toString(),
+                        header,
+                        hashObj: blockHash
+                    });
+                } else {
+                    console.log(`Skipping existing block ${blockNumber}`);
+                }
+            } catch (e) {
+                console.error(`Error processing block ${blockNumber}:`, e);
+            }
+        }
+    } else {
+        // Process latest block only (original behavior)
+        const header = await api.rpc.chain.getHeader();
+        console.log(`Connected to Acala network - Block Number: ${header.number}, Block Hash: ${header.hash}`);
+        
+        // Check if block already exists
+        const existingBlock = await prisma.block.findFirst({
+            where: { number: header.number.toNumber() }
+        });
+        
+        if (!existingBlock) {
+            blocksToProcess.push({
+                number: header.number.toNumber(),
+                hash: header.hash.toString(),
+                header,
+                hashObj: header.hash
+            });
+        } else {
+            console.log(`Skipping existing block ${header.number}`);
+            return; // No new blocks to process
+        }
+    }
+
+    // Process all blocks in the queue
+    for (const block of blocksToProcess) {
+        console.log(`Processing block ${block.number}`);
+        
+        // Get the full block data
+        const signedBlock = await api.rpc.chain.getBlock(block.hashObj);
+        // Get the system events for the current block
+        const events = await api.query.system.events.at(block.hashObj);
     
     // Process each extrinsic in the block to extract relevant information
     const extrinsics = await Promise.all(signedBlock.block.extrinsics.map(async (ext: any, index: number) => {
@@ -94,52 +147,74 @@ export async function extractData(batchLog?: {id: number}) {
         };
     }));
     
-    // Create a block record in the database
-    const blockRecord = await prisma.block.create({
-        data: {
-            number: header.number.toNumber(),
-            hash: header.hash.toString(),
-            batchId
-        }
-    });
+        // Create a block record in the database
+        const blockRecord = await prisma.block.create({
+            data: {
+                number: block.number,
+                hash: block.hash,
+                batchId
+            }
+        });
     
-    if (extrinsics.length > 0) {
-        // Create records for each extrinsic in the database
-        const createdExtrinsics = await Promise.all(extrinsics.map(async ext => {
-            return await prisma.extrinsic.create({
-                data: {
-                    blockId: blockRecord.id,
-                    index: ext.index,
-                    method: ext.method,
-                    signer: ext.signer,
-                    fee: ext.fee,
-                    status: ext.status,
-                    params: ext.params,
-                    batchId
-                }
-            });
-        }));
-        
-        // Create records for each event in the database
-        await Promise.all((events as any).map(async (record: any, index: number) => {
-            const { event, phase } = record;
-            // Determine the associated extrinsic ID based on the event phase
-            const extrinsicId = phase.isApplyExtrinsic
-                ? createdExtrinsics[phase.asApplyExtrinsic.toNumber()]?.id
-                : null;
+        if (extrinsics.length > 0) {
+            // Create records for each extrinsic in the database
+            const createdExtrinsics = await Promise.all(extrinsics.map(async ext => {
+                // Check if extrinsic already exists
+                const existingExtrinsic = await prisma.extrinsic.findFirst({
+                    where: {
+                        blockId: blockRecord.id,
+                        index: ext.index
+                    }
+                });
                 
-            return await prisma.event.create({
-                data: {
-                    blockId: blockRecord.id,
-                    extrinsicId,
-                    index,
-                    section: event.section,
-                    method: event.method,
-                    data: event.data.toHuman(),
-                    batchId
+                if (!existingExtrinsic) {
+                    return await prisma.extrinsic.create({
+                        data: {
+                            blockId: blockRecord.id,
+                            index: ext.index,
+                            method: ext.method,
+                            signer: ext.signer,
+                            fee: ext.fee,
+                            status: ext.status,
+                            params: ext.params,
+                            batchId
+                        }
+                    });
                 }
-            });
-        }));
+                return existingExtrinsic;
+            }).filter(Boolean));
+            
+            // Create records for each event in the database
+            await Promise.all((events as any).map(async (record: any, index: number) => {
+                const { event, phase } = record;
+                // Determine the associated extrinsic ID based on the event phase
+                const extrinsicId = phase.isApplyExtrinsic
+                    ? createdExtrinsics[phase.asApplyExtrinsic.toNumber()]?.id
+                    : null;
+                    
+                // Check if event already exists
+                const existingEvent = await prisma.event.findFirst({
+                    where: {
+                        blockId: blockRecord.id,
+                        index: index
+                    }
+                });
+                
+                if (!existingEvent) {
+                    return await prisma.event.create({
+                        data: {
+                            blockId: blockRecord.id,
+                            extrinsicId,
+                            index,
+                            section: event.section,
+                            method: event.method,
+                            data: event.data.toHuman(),
+                            batchId
+                        }
+                    });
+                }
+            }).filter(Boolean));
+        }
     }
     
     // Disconnect from the network API
@@ -162,7 +237,7 @@ export async function extractData(batchLog?: {id: number}) {
  * Creates a new batch log for each extraction attempt, updates its status upon success or failure,
  * and retries the extraction if it fails.
  */
-export async function runExtract() {
+export async function runExtract(startBlock?: number, endBlock?: number) {
     // Infinite loop to ensure the extraction process runs continuously
     while (true) {
         // Variable to hold the batch log record created for each extraction attempt
@@ -178,7 +253,12 @@ export async function runExtract() {
             });
             
             // Call the extractData function with the created batch log to start the data extraction process
-            await extractData(batchLog);
+            await extractData(batchLog, startBlock, endBlock);
+            
+            // If processing historical blocks, exit after one run
+            if (startBlock !== undefined && endBlock !== undefined) {
+                break;
+            }
         } catch (e) {
             // Log any errors that occur during the extraction process
             console.error(e);
