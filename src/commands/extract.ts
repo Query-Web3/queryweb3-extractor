@@ -18,13 +18,22 @@ export async function extractData(batchLog?: {id: number}) {
     console.log(`Starting batch with ID: ${batchId}`);
     
     // Create a WebSocket provider for the Acala network (Note: this provider is declared but not used)
-    const wsProvider = new WsProvider('wss://acala-rpc.aca-api.network');
-    // Create a WebSocket provider for the Karura network
-    const provider = new WsProvider('wss://karura.api.onfinality.io/public-ws');
-    // Initialize an API promise with the specified provider
-    const api = new ApiPromise(options({ provider }));
-    // Wait for the API to be ready
-    await api.isReady;
+    // Use recommended RPC endpoints
+    const provider = new WsProvider([
+        'wss://karura-rpc.dwellir.com',
+        'wss://karura.polkawallet.io'
+    ]);
+    
+    // Initialize API with error handling
+    let api;
+    try {
+        api = new ApiPromise(options({ provider }));
+        await api.isReady;
+        console.log('API connection established successfully');
+    } catch (e) {
+        console.error('Failed to initialize API:', e);
+        throw new Error('API initialization failed');
+    }
     
     // Get the latest block header from the network
     const header = await api.rpc.chain.getHeader();
@@ -40,9 +49,14 @@ export async function extractData(batchLog?: {id: number}) {
         let fee = '0';
         try {
             // Get the payment information for the extrinsic to calculate the fee
+            console.log(`Getting payment info for extrinsic ${index} with signer ${ext.signer?.toString()}`);
             const paymentInfo = await api.tx(ext.method).paymentInfo(ext.signer);
             fee = paymentInfo.partialFee.toString();
-        } catch (e) {}
+            console.log(`Payment info for extrinsic ${index}: ${JSON.stringify(paymentInfo.toHuman())}`);
+        } catch (e) {
+            console.error(`Failed to get payment info for extrinsic ${index}:`, e);
+            fee = '0';
+        }
         
         return {
             index: index,
