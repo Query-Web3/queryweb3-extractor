@@ -260,12 +260,25 @@ async function upsertToken(currencyId: any) {
     const assetTypeRepo = dataSource.getRepository(DimAssetType);
     const tokenRepo = dataSource.getRepository(DimToken);
     
-    const currencyIdStr = String(currencyId);
+    // Handle object input by extracting relevant fields or stringifying
+    let currencyIdStr: string;
+    let symbol: string;
+    let name: string;
+    
+    if (typeof currencyId === 'object' && currencyId !== null) {
+        // If currencyId is an object, try to extract address/symbol/name
+        currencyIdStr = currencyId.address || currencyId.id || JSON.stringify(currencyId);
+        symbol = currencyId.symbol || currencyIdStr.slice(0, 20);
+        name = currencyId.name || currencyIdStr.slice(0, 100);
+    } else {
+        // For non-object input, convert to string
+        currencyIdStr = String(currencyId);
+        symbol = currencyIdStr;
+        name = currencyIdStr;
+    }
     
     // Determine token type and metadata
     let assetTypeName = 'Native';
-    let symbol = currencyIdStr;
-    let name = currencyIdStr;
     let decimals = 12; // Default for most Substrate chains
     
     if (currencyIdStr.startsWith('LP-')) {
