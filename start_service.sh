@@ -24,10 +24,13 @@ if [ ! -f ecosystem.config.js ]; then
 fi
 
 # Build the project
-echo "Building project..."
-if ! pnpm build; then
-    echo "Error: Build failed. Please check the build errors."
-    exit 1
+if [ ! -f dist/index.min.js ]; then
+    echo "Building project..."
+    rm -rf dist
+    if ! pnpm build; then
+        echo "Error: Build failed. Please check the build errors."
+        exit 1
+    fi
 fi
 
 # Start services using PM2 ecosystem

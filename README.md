@@ -292,6 +292,12 @@ pm2 list
 pm2 logs
 ```
 
+### Rebuilding the Project
+```bash
+./rebuild.sh
+./start_service.sh
+```
+
 ### Configuration options (in `.env`):
 - `EXTRACT_INTERVAL_MS`: Extract polling interval in milliseconds (default: 3600000 - 1 hour)
 - `TRANSFORM_INTERVAL_MS`: Transform polling interval in milliseconds (default: 3600000 - 1 hour)
