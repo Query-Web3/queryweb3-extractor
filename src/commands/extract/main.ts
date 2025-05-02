@@ -3,64 +3,57 @@ import { BatchLog, BatchStatus, LockStatus } from '../../entities/BatchLog';
 import { Block } from '../../entities/Block';
 import { ApiPromise, WsProvider } from '@polkadot/api';
 import { options } from '@acala-network/api';
-import { v4 as uuidv4 } from 'uuid';
 import { initializeDataSource } from './dataSource';
 import { getConcurrencySettings, splitIntoChunks, processChunk } from './parallelManager';
 
 const EXTRACT_INTERVAL_MS = process.env.EXTRACT_INTERVAL_MS ? Number(process.env.EXTRACT_INTERVAL_MS) : 3600000;
 const LOCK_KEY = 'extract_data_lock';
 
-/**
- * Checks if the data extraction process is locked and attempts to acquire the lock.
- * If the lock is already held and hasn't expired, it returns false. Otherwise, it acquires the lock and returns true.
- * 
- * @param dataSource - The TypeORM DataSource instance used to interact with the database.
- * @param batchId - The unique identifier for the current extraction batch.
- * @returns A promise that resolves to a boolean indicating whether the lock was successfully acquired.
- */
 async function checkAndAcquireLock(dataSource: DataSource, batchId: string): Promise<boolean> {
-    // Get the repository for the BatchLog entity from the data source
-    const lockRepo = dataSource.getRepository(BatchLog);
-    // Check if there is an existing lock in the database
-    const existingLock = await lockRepo.findOne({
+    const batchRepo = dataSource.getRepository(BatchLog);
+    
+    // First verify batch exists
+    const batch = await batchRepo.findOne({ where: { batchId } });
+    if (!batch) {
+        throw new Error(`Batch with ID ${batchId} not found`);
+    }
+
+    // Check existing lock
+    const existingLock = await batchRepo.findOne({
         where: { lockKey: LOCK_KEY }
     });
 
-    // If an existing lock is found
     if (existingLock) {
-        // Get the timestamp when the lock was set, default to 0 if not available
         const lockTime = existingLock.lockTime?.getTime() || 0;
-        // Get the current timestamp
         const currentTime = Date.now();
-        // Check if the lock is still valid (hasn't expired)
         if (currentTime - lockTime < EXTRACT_INTERVAL_MS) {
-            // Log the time when the lock will expire
             console.log(`Extract data is locked until ${new Date(lockTime + EXTRACT_INTERVAL_MS)}`);
-            // Return false if the lock is still valid
             return false;
         }
     }
 
-    // Acquire the lock by upserting a new record with the batch ID
-    await lockRepo.upsert({
+    // Update the existing batch record with lock info
+    await batchRepo.update(batch.id, {
         lockKey: LOCK_KEY,
         lockTime: new Date(),
-        lockStatus: LockStatus.LOCKED,
-        batchId: batchId
-    }, ['lockKey']);
+        lockStatus: LockStatus.LOCKED
+    });
 
-    // Return true if the lock was successfully acquired
     return true;
 }
 
 async function releaseLock(dataSource: DataSource, batchId: string, success: boolean = true) {
-    const lockRepo = dataSource.getRepository(BatchLog);
-    await lockRepo.update({
-        lockKey: LOCK_KEY
-    }, {
+    const batchRepo = dataSource.getRepository(BatchLog);
+    
+    // Verify batch exists
+    const batch = await batchRepo.findOne({ where: { batchId } });
+    if (!batch) {
+        throw new Error(`Batch with ID ${batchId} not found`);
+    }
+
+    await batchRepo.update(batch.id, {
         lockStatus: success ? LockStatus.UNLOCKED : LockStatus.FAILED,
-        lockTime: new Date(),
-        batchId: batchId
+        lockTime: new Date()
     });
 }
 
