@@ -68,6 +68,7 @@ export async function extractData(
     const batchId = batchLog.batchId;
     console.log(`Starting batch with ID: ${batchId}`);
 
+    let processedCount = 0;
     const dataSource = await initializeDataSource();
     
     const hasLock = await checkAndAcquireLock(dataSource, batchId);
@@ -172,8 +173,9 @@ export async function extractData(
                 let currentBatchStart = batchStart;
                 while (currentBatchStart <= batchEnd) {
                     const currentBatchEnd = Math.min(currentBatchStart + batchSize - 1, batchEnd);
-                    console.log(`Collecting blocks ${currentBatchStart} to ${currentBatchEnd}`);
-            
+                    console.log(`Processing blocks ${currentBatchStart} to ${currentBatchEnd}`);
+                    
+                    blocksToProcess = [];
                     for (let blockNumber = currentBatchStart; blockNumber <= currentBatchEnd; blockNumber++) {
                         try {
                             const blockHash = await api.rpc.chain.getBlockHash(blockNumber);
@@ -198,14 +200,29 @@ export async function extractData(
                             continue;
                         }
                     }
+                    
+                    // Process current batch immediately
+                    if (blocksToProcess.length > 0) {
+                        const { CONCURRENCY, CHUNK_SIZE } = getConcurrencySettings(blocksToProcess.length);
+                        const chunks = splitIntoChunks(blocksToProcess, CHUNK_SIZE);
+                        
+                        for (let i = 0; i < chunks.length; i += CONCURRENCY) {
+                            const currentChunks = chunks.slice(i, i + CONCURRENCY);
+                            const results = await Promise.all(
+                                currentChunks.map(chunk => processChunk(chunk, api, batchId))
+                            );
+                            processedCount += results.reduce((sum, count) => sum + count, 0);
+                        }
+                    }
+                    
                     currentBatchStart = currentBatchEnd + 1;
-                }
-                
-                if (batchLog) {
-                    await dataSource.getRepository(BatchLog).update(batchLog.id, {
-                        processed_block_count: (batchNum + 1) * batchSize,
-                        last_processed_height: batchEnd
-                    });
+                    
+                    if (batchLog) {
+                        await dataSource.getRepository(BatchLog).update(batchLog.id, {
+                            processed_block_count: processedCount,
+                            last_processed_height: currentBatchEnd
+                        });
+                    }
                 }
             }
         } else {
@@ -265,18 +282,19 @@ export async function extractData(
         }
     }
 
-    const { CONCURRENCY, CHUNK_SIZE } = getConcurrencySettings(blocksToProcess.length);
-
-    let processedCount = 0;
     try {
-        const chunks = splitIntoChunks(blocksToProcess, CHUNK_SIZE);
-
-        for (let i = 0; i < chunks.length; i += CONCURRENCY) {
-            const currentChunks = chunks.slice(i, i + CONCURRENCY);
-            const results = await Promise.all(
-                currentChunks.map(chunk => processChunk(chunk, api, batchId))
-            );
-            processedCount += results.reduce((sum, count) => sum + count, 0);
+        // Final processing for any remaining blocks (non-historical case)
+        if (blocksToProcess.length > 0) {
+            const { CONCURRENCY, CHUNK_SIZE } = getConcurrencySettings(blocksToProcess.length);
+            const chunks = splitIntoChunks(blocksToProcess, CHUNK_SIZE);
+            
+            for (let i = 0; i < chunks.length; i += CONCURRENCY) {
+                const currentChunks = chunks.slice(i, i + CONCURRENCY);
+                const results = await Promise.all(
+                    currentChunks.map(chunk => processChunk(chunk, api, batchId))
+                );
+                processedCount += results.reduce((sum, count) => sum + count, 0);
+            }
         }
     } catch (e) {
         console.error('Error processing blocks:', e);
