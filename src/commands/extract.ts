@@ -199,15 +199,18 @@ export async function extractData(batchLog?: {id: number}, startBlock?: number, 
         let lastProgressUpdate = 0;
         
         // Update progress display
-        const updateProgress = () => {
+        const updateProgress = (currentChunk: typeof blocksToProcess) => {
             const now = Date.now();
             if (now - lastProgressUpdate < 1000) return; // Update once per second
             lastProgressUpdate = now;
             
             console.log('\nCurrent parallel processing progress:');
             progressMap.forEach((progress, workerId) => {
-                const percent = Math.round((progress.current / progress.total) * 100);
-                console.log(`Worker ${workerId}: ${progress.current}/${progress.total} (${percent}%)`);
+                const currentBlock = currentChunk[progress.current - 1]?.number || 0;
+                const startBlock = currentChunk[0]?.number || 0;
+                const endBlock = currentChunk[currentChunk.length - 1]?.number || 0;
+                const blockProgress = Math.round((currentBlock - startBlock) / (endBlock - startBlock + 1) * 100);
+                console.log(`Worker ${workerId}: Block ${currentBlock} (${blockProgress}%)`);
             });
             console.log('');
         };
@@ -395,7 +398,7 @@ export async function extractData(batchLog?: {id: number}, startBlock?: number, 
                 });
                 
                 // Update progress display
-                updateProgress();
+                updateProgress(chunk);
                 
                 return processBlock(block, currentWorkerId)
                     .then(result => {
@@ -403,7 +406,12 @@ export async function extractData(batchLog?: {id: number}, startBlock?: number, 
                         const progress = progressMap.get(currentWorkerId);
                         if (progress) {
                             progress.current++;
-                            updateProgress();
+                            updateProgress(chunk);
+                            const currentBlock = block.number;
+                            const startBlock = chunk[0].number;
+                            const endBlock = chunk[chunk.length - 1].number;
+                            const blockProgress = Math.round((currentBlock - startBlock) / (endBlock - startBlock + 1) * 100);
+                            console.log(`Processed block ${currentBlock} (${blockProgress}%)`);
                         }
                         return result;
                     });
