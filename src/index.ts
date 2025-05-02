@@ -12,7 +12,7 @@ const program = new Command();
 program
     .name('acala-data-extractor')
     .description('CLI for extracting and transforming Acala blockchain data')
-    .version('0.2.0');
+    .version('0.3.0');
 
 program.command('extract')
     .description('Extract raw data from Acala blockchain')

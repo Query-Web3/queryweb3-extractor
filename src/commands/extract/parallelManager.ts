@@ -89,8 +89,6 @@ export async function processChunk(
                     const currentBlock = block.number;
                     const startBlock = chunk[0].number;
                     const endBlock = chunk[chunk.length - 1].number;
-                    const blockProgress = Math.round((currentBlock - startBlock) / (endBlock - startBlock + 1) * 100);
-                    console.log(`Processed block ${currentBlock}`);
                 }
                 return result;
             });

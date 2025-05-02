@@ -1,6 +1,6 @@
 {
   "name": "acala-data-extractor",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "从Acala网络获取链数据并存入MySQL数据库",
   "main": "dist/index.min.js",
   "scripts": {

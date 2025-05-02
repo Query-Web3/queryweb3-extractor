@@ -174,6 +174,8 @@ export async function extractData(
                 while (currentBatchStart <= batchEnd) {
                     const currentBatchEnd = Math.min(currentBatchStart + batchSize - 1, batchEnd);
                     console.log(`Processing blocks ${currentBatchStart} to ${currentBatchEnd}`);
+                    const batchStartTime = Date.now();
+                    console.log(`Batch ${batchNum + 1}/${totalBatches} started at: ${new Date(batchStartTime).toISOString()}`);
                     
                     blocksToProcess = [];
                     for (let blockNumber = currentBatchStart; blockNumber <= currentBatchEnd; blockNumber++) {
@@ -214,6 +216,10 @@ export async function extractData(
                             processedCount += results.reduce((sum, count) => sum + count, 0);
                         }
                     }
+                    
+                    const batchEndTime = Date.now();
+                    const batchDuration = (batchEndTime - batchStartTime) / 1000;
+                    console.log(`Batch ${batchNum + 1}/${totalBatches} completed in ${batchDuration.toFixed(3)}s`);
                     
                     currentBatchStart = currentBatchEnd + 1;
                     
