@@ -1,120 +1,191 @@
-SET SQL_MODE = "NO_AUTO_VALUE_ON_ZERO";
-START TRANSACTION;
-SET time_zone = "+00:00";
+-- 1. 区块链网络表
+CREATE TABLE IF NOT EXISTS dim_chains (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    name VARCHAR(50) NOT NULL COMMENT '网络名称，如 Polkadot、Kusama、Hydration、Bifrost',
+    chain_id INT NOT NULL COMMENT '链ID',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    latest_block INT COMMENT '最新区块高度',
+    latest_block_time TIMESTAMP COMMENT '最新区块时间'
+) COMMENT '区块链网络信息表';
 
-/*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
-/*!40101 SET @OLD_CHARACTER_SET_RESULTS=@@CHARACTER_SET_RESULTS */;
-/*!40101 SET @OLD_COLLATION_CONNECTION=@@COLLATION_CONNECTION */;
-/*!40101 SET NAMES utf8mb4 */;
+-- 2. 资产类型表
+CREATE TABLE IF NOT EXISTS dim_asset_types (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    name VARCHAR(50) NOT NULL COMMENT '资产类型名称，如 DeFi、GameFi、NFT',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY unique_name (name)
+) COMMENT '资产类型表';
+
+-- 3. 收益类型表
+CREATE TABLE IF NOT EXISTS dim_return_types (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    name VARCHAR(50) NOT NULL COMMENT '收益类型，如 Staking、Farming、Lending',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY unique_name (name)
+) COMMENT '收益类型表';
+
+-- 4. 代币表
+CREATE TABLE IF NOT EXISTS dim_tokens (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    chain_id INT NOT NULL COMMENT '所属链ID',
+    address VARCHAR(42) NOT NULL COMMENT '代币合约地址',
+    symbol VARCHAR(20) NOT NULL COMMENT '代币符号',
+    name VARCHAR(100) NOT NULL COMMENT '代币名称',
+    decimals INT NOT NULL COMMENT '精度',
+    asset_type_id INT NOT NULL COMMENT '资产类型ID',
+    price_usd DECIMAL(65,18) COMMENT 'USD价格',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY unique_token (chain_id, address)
+) COMMENT '代币基础信息表';
+
+-- 5. 代币每日数据表
+CREATE TABLE IF NOT EXISTS fact_token_daily_stats (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    token_id INT NOT NULL COMMENT '代币ID',
+    date DATE NOT NULL COMMENT '日期',
+    volume DECIMAL(65,18) NOT NULL COMMENT '交易量',
+    volume_usd DECIMAL(65,18) NOT NULL COMMENT 'USD交易量',
+    txns_count INT NOT NULL COMMENT '交易笔数',
+    price_usd DECIMAL(65,18) NOT NULL COMMENT 'USD价格',
+    volume_yoy DECIMAL(10,2) DEFAULT NULL COMMENT '交易量同比增长率(%)',
+    volume_qoq DECIMAL(10,2) DEFAULT NULL COMMENT '交易量环比增长率(%)',
+    txns_yoy DECIMAL(10,2) DEFAULT NULL COMMENT '交易数同比增长率(%)',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY unique_daily_stats (token_id, date)
+) COMMENT '代币每日统计数据表';
+
+-- 6. 收益率数据表
+CREATE TABLE IF NOT EXISTS fact_yield_stats (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    token_id INT NOT NULL COMMENT '代币ID',
+    return_type_id INT NOT NULL COMMENT '收益类型ID',
+    pool_address VARCHAR(42) NOT NULL COMMENT '流动池地址',
+    date DATE NOT NULL COMMENT '日期',
+    apy DECIMAL(10,2) NOT NULL COMMENT '年化收益率(%)',
+    tvl DECIMAL(65,18) NOT NULL COMMENT '总锁仓量',
+    tvl_usd DECIMAL(65,18) NOT NULL COMMENT 'USD总锁仓量',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY unique_daily_yield (token_id, pool_address, date)
+) COMMENT '收益率数据表';
+
+-- 7. 统计周期表
+CREATE TABLE IF NOT EXISTS dim_stat_cycles (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    name VARCHAR(20) NOT NULL COMMENT '统计周期名称(daily/weekly/monthly/yearly)',
+    days INT NOT NULL COMMENT '周期天数',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY unique_name (name)
+) COMMENT '统计周期表';
+
+-- 初始化基础数据
+ALTER TABLE dim_stat_cycles
+  ADD UNIQUE KEY (name);
+	
+INSERT IGNORE INTO dim_stat_cycles (name, days)
+VALUES
+    ('daily', 1),
+    ('weekly', 7),
+    ('monthly', 30),
+    ('yearly', 365);
 
 
-DROP TABLE IF EXISTS `dim_asset_types`;
-CREATE TABLE IF NOT EXISTS `dim_asset_types` (
-  `id` int(11) NOT NULL AUTO_INCREMENT,
-  `name` varchar(50) NOT NULL,
-  `created_at` datetime(3) NOT NULL DEFAULT current_timestamp(3),
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `dim_asset_types_name_key` (`name`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+-- 确保 name 字段唯一
+ALTER TABLE dim_asset_types
+  ADD UNIQUE KEY (name);
 
-TRUNCATE TABLE `dim_asset_types`;
-DROP TABLE IF EXISTS `dim_chains`;
-CREATE TABLE IF NOT EXISTS `dim_chains` (
-  `id` int(11) NOT NULL AUTO_INCREMENT,
-  `name` varchar(50) NOT NULL,
-  `chainId` int(11) NOT NULL,
-  `created_at` datetime(3) NOT NULL DEFAULT current_timestamp(3),
-  `updated_at` datetime(3) NOT NULL DEFAULT current_timestamp(3),
-  PRIMARY KEY (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+-- 使用 INSERT IGNORE 插入多条记录
+INSERT IGNORE INTO dim_asset_types (name)
+VALUES
+    ('DeFi'),
+    ('GameFi'),
+    ('NFT');
 
-TRUNCATE TABLE `dim_chains`;
-DROP TABLE IF EXISTS `dim_return_types`;
-CREATE TABLE IF NOT EXISTS `dim_return_types` (
-  `id` int(11) NOT NULL AUTO_INCREMENT,
-  `name` varchar(50) NOT NULL,
-  `created_at` datetime(3) NOT NULL DEFAULT current_timestamp(3),
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `dim_return_types_name_key` (`name`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+ALTER TABLE dim_return_types
+  ADD UNIQUE KEY (name);
 
-TRUNCATE TABLE `dim_return_types`;
-DROP TABLE IF EXISTS `dim_stat_cycles`;
-CREATE TABLE IF NOT EXISTS `dim_stat_cycles` (
-  `id` int(11) NOT NULL AUTO_INCREMENT,
-  `name` varchar(20) NOT NULL,
-  `days` int(11) NOT NULL,
-  `created_at` datetime(3) NOT NULL DEFAULT current_timestamp(3),
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `dim_stat_cycles_name_key` (`name`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+INSERT IGNORE INTO dim_return_types (name)
+VALUES
+    ('Staking'),
+    ('Farming'),
+    ('Lending');
 
-TRUNCATE TABLE `dim_stat_cycles`;
-DROP TABLE IF EXISTS `dim_tokens`;
-CREATE TABLE IF NOT EXISTS `dim_tokens` (
-  `id` int(11) NOT NULL AUTO_INCREMENT,
-  `chainId` int(11) NOT NULL,
-  `address` varchar(42) NOT NULL,
-  `symbol` varchar(20) NOT NULL,
-  `name` varchar(100) NOT NULL,
-  `decimals` int(11) NOT NULL,
-  `assetTypeId` int(11) NOT NULL,
-  `created_at` datetime(3) NOT NULL DEFAULT current_timestamp(3),
-  `updated_at` datetime(3) NOT NULL DEFAULT current_timestamp(3),
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `dim_tokens_chainId_address_key` (`chainId`,`address`),
-  KEY `dim_tokens_assetTypeId_fkey` (`assetTypeId`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+-- 添加一些示例链
+ALTER TABLE dim_chains
+  ADD UNIQUE KEY (name);
 
-TRUNCATE TABLE `dim_tokens`;
-DROP TABLE IF EXISTS `fact_token_daily_stats`;
-CREATE TABLE IF NOT EXISTS `fact_token_daily_stats` (
-  `id` bigint(20) NOT NULL AUTO_INCREMENT,
-  `tokenId` int(11) NOT NULL,
-  `date` datetime(3) NOT NULL,
-  `volume` decimal(36,18) NOT NULL,
-  `volume_usd` decimal(36,18) NOT NULL,
-  `txns_count` int(11) NOT NULL,
-  `price_usd` decimal(36,18) NOT NULL,
-  `volume_yoy` decimal(10,2) DEFAULT NULL,
-  `volume_qoq` decimal(10,2) DEFAULT NULL,
-  `txns_yoy` decimal(10,2) DEFAULT NULL,
-  `created_at` datetime(3) NOT NULL DEFAULT current_timestamp(3),
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `fact_token_daily_stats_tokenId_date_key` (`tokenId`,`date`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+INSERT IGNORE INTO dim_chains (name)
+VALUES
+    ('Polkadot'),   
+    ('Kusama'), 
+    ('Hydration'),
+    ('Bifrost');
 
-TRUNCATE TABLE `fact_token_daily_stats`;
-DROP TABLE IF EXISTS `fact_yield_stats`;
-CREATE TABLE IF NOT EXISTS `fact_yield_stats` (
-  `id` bigint(20) NOT NULL AUTO_INCREMENT,
-  `tokenId` int(11) NOT NULL,
-  `returnTypeId` int(11) NOT NULL,
-  `poolAddress` varchar(42) NOT NULL,
-  `date` datetime(3) NOT NULL,
-  `apy` decimal(10,2) NOT NULL,
-  `tvl` decimal(36,18) NOT NULL,
-  `tvl_usd` decimal(36,18) NOT NULL,
-  `created_at` datetime(3) NOT NULL DEFAULT current_timestamp(3),
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `fact_yield_stats_tokenId_poolAddress_date_key` (`tokenId`,`poolAddress`,`date`),
-  KEY `fact_yield_stats_returnTypeId_fkey` (`returnTypeId`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+-- 插入代币数据
+INSERT INTO dim_tokens
+(id, chain_id, address, symbol, name, decimals, asset_type_id)
+VALUES
+(1, 3, '0x1234567890123456789012345678901234567890', 'TKN1', 'Token1', 18, 1),
+(2, 3, '0x2345678901234567890123456789012345678901', 'TKN2', 'Token2', 18, 1),
+(3, 3, '0x3456789012345678901234567890123456789012', 'TKN3', 'Token3', 18, 1),
+(4, 3, '0x4567890123456789012345678901234567890123', 'TKN4', 'Token4', 18, 1),
+(5, 3, '0x5678901234567890123456789012345678901234', 'TKN5', 'Token5', 18, 1);
 
-TRUNCATE TABLE `fact_yield_stats`;
+INSERT INTO fact_token_daily_stats
+(token_id, date, volume, volume_usd, txns_count, price_usd, volume_yoy, volume_qoq, txns_yoy)
+WITH RECURSIVE dates AS (
+    SELECT CURDATE() - INTERVAL 100 DAY as date
+    UNION ALL
+    SELECT date + INTERVAL 1 DAY
+    FROM dates
+    WHERE date < CURDATE()
+)
+SELECT
+    1 as token_id,
+    d.date,
+    ROUND(RAND() * 1000000, 4) as volume,
+    ROUND(RAND() * 1000000, 4) as volume_usd,
+    FLOOR(RAND() * 100000) as txns_count,
+    ROUND(RAND() * 1000, 4) as price_usd,
+    ROUND((RAND() * 20 - 10), 2) as volume_yoy,
+    ROUND((RAND() * 15 - 7), 2) as volume_qoq,
+    ROUND((RAND() * 30 - 15), 2) as txns_yoy
+FROM dates d;
 
-ALTER TABLE `dim_tokens`
-  ADD CONSTRAINT `dim_tokens_assetTypeId_fkey` FOREIGN KEY (`assetTypeId`) REFERENCES `dim_asset_types` (`id`) ON UPDATE CASCADE,
-  ADD CONSTRAINT `dim_tokens_chainId_fkey` FOREIGN KEY (`chainId`) REFERENCES `dim_chains` (`id`) ON UPDATE CASCADE;
 
-ALTER TABLE `fact_token_daily_stats`
-  ADD CONSTRAINT `fact_token_daily_stats_tokenId_fkey` FOREIGN KEY (`tokenId`) REFERENCES `dim_tokens` (`id`) ON UPDATE CASCADE;
-
-ALTER TABLE `fact_yield_stats`
-  ADD CONSTRAINT `fact_yield_stats_returnTypeId_fkey` FOREIGN KEY (`returnTypeId`) REFERENCES `dim_return_types` (`id`) ON UPDATE CASCADE,
-  ADD CONSTRAINT `fact_yield_stats_tokenId_fkey` FOREIGN KEY (`tokenId`) REFERENCES `dim_tokens` (`id`) ON UPDATE CASCADE;
-COMMIT;
-
-/*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
-/*!40101 SET CHARACTER_SET_RESULTS=@OLD_CHARACTER_SET_RESULTS */;
-/*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
+INSERT INTO fact_yield_stats
+(token_id, return_type_id, pool_address, date, apy, tvl, tvl_usd)
+WITH RECURSIVE dates AS (
+    SELECT CURDATE() - INTERVAL 49 DAY as date
+    UNION ALL
+    SELECT date + INTERVAL 1 DAY
+    FROM dates
+    WHERE date < CURDATE()
+),
+tokens AS (
+    SELECT 1 as token_id UNION ALL
+    SELECT 2 UNION ALL
+    SELECT 3 UNION ALL
+    SELECT 4 UNION ALL
+    SELECT 5
+),
+pools AS (
+    SELECT
+        t.token_id,
+        CONCAT('0x', LPAD(HEX(t.token_id * 1000 + ROW_NUMBER() OVER (PARTITION BY t.token_id ORDER BY t.token_id)), 40, '0')) as pool_address
+    FROM tokens t
+    CROSS JOIN (SELECT 1 as n UNION ALL SELECT 2) numbers
+)
+SELECT
+    p.token_id,
+    1 + FLOOR(RAND() * 3) as return_type_id,  -- 随机生成1-3的return_type_id
+    p.pool_address,
+    d.date,
+    ROUND(RAND() * 20, 2) as apy,             -- 0-20% 的 APY
+    ROUND(RAND() * 1000000, 4) as tvl,        -- 保留4位小数的 TVL
+    ROUND(RAND() * 1000000, 4) as tvl_usd     -- 保留4位小数的 TVL USD
+FROM dates d
+CROSS JOIN pools p
+ORDER BY RAND()
+LIMIT 250

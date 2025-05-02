@@ -24,6 +24,9 @@ export class DimToken {
   @Column()
   decimals: number;
 
+  @Column({ type: 'decimal', precision: 36, scale: 18, nullable: true })
+  priceUsd: number;
+
   @Column()
   assetTypeId: number;
 

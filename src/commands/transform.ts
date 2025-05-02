@@ -1,4 +1,5 @@
 import { DataSource } from 'typeorm';
+import { Block } from '../entities/Block';
 import { BatchLog, BatchStatus, BatchType } from '../entities/BatchLog';
 import { transformDataSource } from '../datasources/transformDataSource';
 import { DimChain } from '../entities/DimChain';
@@ -11,7 +12,14 @@ import { FactTokenDailyStat } from '../entities/FactTokenDailyStat';
 import { FactYieldStat } from '../entities/FactYieldStat';
 import { v4 as uuidv4 } from 'uuid';
 
-// 初始化数据源
+// Mock function to get token price from oracle
+async function getTokenPriceFromOracle(tokenAddress: string): Promise<number | null> {
+    // In a real implementation, this would query an external price oracle
+    // For now return null to fall back to default price
+    return null;
+}
+
+// init datasource
 let dataSource: DataSource;
 
 async function initializeDataSource() {
@@ -54,17 +62,36 @@ export async function transformData(batchLog?: BatchLog) {
     try {
         const dataSource = await initializeDataSource();
         
+        // Process blocks first to ensure we have the chain data
+        const blockRepo = dataSource.getRepository(Block);
+        const latestBlock = await blockRepo.findOne({ 
+            order: { number: 'DESC' },
+            where: { batchId: batchLog?.batchId }
+        });
+
+        if (!latestBlock) {
+            throw new Error('No blocks found for this batch');
+        }
+
         // Ensure basic dimension data exists
         const chainRepo = dataSource.getRepository(DimChain);
         let chain = await chainRepo.findOne({ where: { name: 'Acala' } });
         if (!chain) {
             chain = await chainRepo.save({
                 name: 'Acala',
-                chainId: 1
+                chainId: 1,
+                latestBlock: latestBlock.number,
+                latestBlockTime: latestBlock.timestamp
+            });
+        } else {
+            // Update latest block info
+            await chainRepo.update(chain.id, {
+                latestBlock: latestBlock.number,
+                latestBlockTime: latestBlock.timestamp
             });
         }
 
-        // Process common extrinsic methods
+        // Define the extrinsic methods to be processed
         const methodsToProcess = [
             'tokens.transfer',
             'dex.swapWithExactSupply',
@@ -73,37 +100,46 @@ export async function transformData(batchLog?: BatchLog) {
             'homa.requestRedeem'
         ];
 
+        // Iterate through each extrinsic method
         for (const method of methodsToProcess) {
+            // Query all extrinsics with the current method, grouped by parameters
             const extrinsics = await dataSource.getRepository(Extrinsic)
                 .createQueryBuilder('extrinsic')
                 .where('extrinsic.method = :method', { method })
                 .groupBy('extrinsic.params')
                 .getMany();
 
+            // Process each extrinsic
             for (const extrinsic of extrinsics) {
                 try {
                     if (method.startsWith('tokens.')) {
+                        // Cast the extrinsic parameters to TokenParams type
                         const params = extrinsic.params as TokenParams;
                         if (params?.currencyId) {
+                            // Upsert the token if currencyId is present
                             await upsertToken(params.currencyId);
                         }
                     } else if (method.startsWith('dex.')) {
+                        // Cast the extrinsic parameters to SwapParams type
                         const params = extrinsic.params as SwapParams;
                         if (params?.path) {
+                            // Upsert each token in the swap path
                             for (const currencyId of params.path) {
                                 await upsertToken(currencyId);
                             }
                         }
                     } else if (method.startsWith('homa.')) {
+                        // Upsert the ACA token
                         await upsertToken('ACA');
                     }
                 } catch (e) {
+                    // Log any errors that occur during extrinsic processing
                     console.error(`Failed to process ${method} extrinsic:`, extrinsic, e);
                 }
             }
         }
 
-        // Process common event types
+        // Define the common event types to be processed
         const eventsToProcess = [
             'Tokens.Transfer',
             'Dex.Swap',
@@ -112,27 +148,34 @@ export async function transformData(batchLog?: BatchLog) {
             'Rewards.Reward'
         ];
 
+        // Iterate through each common event type
         for (const eventType of eventsToProcess) {
+            // Split the event type into section and method
             const [section, method] = eventType.split('.');
+            // Query all events with the current section and method, grouped by data
             const events = await dataSource.getRepository(Event)
                 .createQueryBuilder('event')
                 .where('event.section = :section AND event.method = :method', { section, method })
                 .groupBy('event.data')
                 .getMany();
 
+            // Process each event
             for (const event of events) {
                 try {
+                    // Cast the event data to EventData type
                     const data = event.data as EventData;
                     if (data?.currencyId) {
+                        // Upsert the token if currencyId is present
                         await upsertToken(data.currencyId);
                     }
                 } catch (e) {
+                    // Log any errors that occur during event processing
                     console.error(`Failed to process ${eventType} event:`, event, e);
                 }
             }
         }
 
-        // Process additional event types
+        // Define additional event types to be processed
         const additionalEvents = [
             'Balances.Transfer',
             'Dex.AddLiquidity',
@@ -142,25 +185,34 @@ export async function transformData(batchLog?: BatchLog) {
             'Incentives.Claimed'
         ];
 
+        // Iterate through each additional event type
         for (const eventType of additionalEvents) {
+            // Split the event type into section and method
             const [section, method] = eventType.split('.');
+            // Query all events with the current section and method, grouped by data
             const events = await dataSource.getRepository(Event)
                 .createQueryBuilder('event')
                 .where('event.section = :section AND event.method = :method', { section, method })
                 .groupBy('event.data')
                 .getMany();
 
+            // Process each event
             for (const event of events) {
                 try {
+                    // Cast the event data to EventData type
                     const data = event.data as EventData;
                     if (section === 'Dex' && data?.poolId) {
+                        // Upsert the LP token if poolId is present
                         await upsertToken(`LP-${data.poolId}`);
                     } else if (section === 'Incentives' && data?.reward) {
+                        // Upsert the reward token if reward is present
                         await upsertToken(data.reward);
                     } else {
+                        // Log unprocessed events
                         console.log(`[INFO] Event ${eventType} received but not processed`, data);
                     }
                 } catch (e) {
+                    // Log any errors that occur during event processing
                     console.error(`Failed to process ${eventType} event:`, event, e);
                 }
             }
@@ -169,13 +221,17 @@ export async function transformData(batchLog?: BatchLog) {
         // Initialize all dimension tables
         await initializeDimensionTables();
         
-        // Process daily stats
+        // Process daily token statistics
         await processTokenDailyStats();
+        // Process daily yield statistics
         await processYieldStats();
         
+        // Log the completion of the data transformation process
         console.log('Data transformation completed');
     } catch (e) {
+        // Log any errors that occur during the transformation process
         console.error('Transform failed:', e);
+        // Rethrow the error to be handled by the caller
         throw e;
     }
 }
@@ -375,30 +431,72 @@ async function processTokenDailyStats() {
     const dataSource = await initializeDataSource();
     const tokenRepo = dataSource.getRepository(DimToken);
     const statRepo = dataSource.getRepository(FactTokenDailyStat);
+    const eventRepo = dataSource.getRepository(Event);
     
     const tokens = await tokenRepo.find();
     const today = new Date();
     today.setHours(0, 0, 0, 0);
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const lastQuarter = new Date(today);
+    lastQuarter.setMonth(lastQuarter.getMonth() - 3);
+    const lastYear = new Date(today);
+    lastYear.setFullYear(lastYear.getFullYear() - 1);
 
     for (const token of tokens) {
-        // Calculate daily stats from events
-        // This is simplified - actual implementation would aggregate from event data
-        const existingStat = await statRepo.findOne({
-            where: {
-                tokenId: token.id,
-                date: today
-            }
+        // Get all transfer events for this token
+        const transferEvents = await eventRepo.find({
+            where: [
+                { section: 'Tokens', method: 'Transfer', data: { currencyId: token.address } },
+                { section: 'Balances', method: 'Transfer', data: { currencyId: token.address } }
+            ]
         });
 
+        // Calculate daily volume and txns
+        const dailyVolume = transferEvents.reduce((sum, event) => {
+            const amount = parseFloat(event.data.amount || '0');
+            return sum + amount;
+        }, 0);
+
+        const dailyTxns = transferEvents.length;
+
+        // Get previous stats for YoY/QoQ calculations
+        const prevDayStat = await statRepo.findOne({ where: { tokenId: token.id, date: yesterday } });
+        const prevQuarterStat = await statRepo.findOne({ where: { tokenId: token.id, date: lastQuarter } });
+        const prevYearStat = await statRepo.findOne({ where: { tokenId: token.id, date: lastYear } });
+
+        // Calculate YoY/QoQ changes
+        const volumeYoY = prevYearStat ? 
+            ((dailyVolume - prevYearStat.volume) / prevYearStat.volume * 100) : 0;
+        const volumeQoQ = prevQuarterStat ? 
+            ((dailyVolume - prevQuarterStat.volume) / prevQuarterStat.volume * 100) : 0;
+        const txnsYoY = prevYearStat ? 
+            ((dailyTxns - prevYearStat.txnsCount) / prevYearStat.txnsCount * 100) : 0;
+
+        // Get or create today's stat
+        const existingStat = await statRepo.findOne({
+            where: { tokenId: token.id, date: today }
+        });
+
+        // Get token price from oracle or use default 1.0 if not available
+        const tokenPrice = token.priceUsd ?? await getTokenPriceFromOracle(token.address) ?? 1.0;
+        
+        const statData = {
+            tokenId: token.id,
+            date: today,
+            volume: dailyVolume,
+            volumeUsd: dailyVolume * tokenPrice,
+            txnsCount: dailyTxns,
+            priceUsd: tokenPrice,
+            volumeYoY,
+            volumeQoQ,
+            txnsYoY
+        };
+
         if (!existingStat) {
-            await statRepo.insert({
-                tokenId: token.id,
-                date: today,
-                volume: 1000.0, // Placeholder - should calculate from events
-                volumeUsd: 1000.0,
-                txnsCount: 10,
-                priceUsd: 1.0
-            });
+            await statRepo.insert(statData);
+        } else {
+            await statRepo.update(existingStat.id, statData);
         }
     }
 }
