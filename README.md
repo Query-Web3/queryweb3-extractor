@@ -40,13 +40,13 @@ A tool to extract and store detailed transaction information from Acala network.
 | number | int(11) | Block number |
 | hash | varchar(191) | Block hash |
 | timestamp | datetime(3) | Block creation time |
-| batchId | varchar(191) | Batch identifier |
+| batchId | char(36) | Batch identifier |
 
 ### Batch Log Table (`acala_batchlog`)
 | Field | Type | Description |
 |-------|------|-------------|
 | id | int(11) | Auto-increment ID |
-| batchId | varchar(191) | Batch identifier |
+| batchId | char(36) | Batch identifier |
 | startTime | datetime(3) | Batch start time |
 | endTime | datetime(3) | Batch end time (nullable) |
 | status | enum('0','1','2') | Batch status (0=FAILED, 1=SUCCESS, 2=RUNNING) |
@@ -69,7 +69,7 @@ A tool to extract and store detailed transaction information from Acala network.
 | fee | varchar(191) | Transaction fee |
 | status | varchar(191) | Transaction status |
 | params | longtext | Transaction parameters (JSON) |
-| batchId | varchar(191) | Batch identifier |
+| batchId | char(36) | Batch identifier |
 
 ### Event Table (`acala_event`)
 | Field | Type | Description |
@@ -81,7 +81,7 @@ A tool to extract and store detailed transaction information from Acala network.
 | section | varchar(191) | Event section (e.g. system, balances, dex) |
 | method | varchar(191) | Event method (e.g. Transfer, Swap) |
 | data | longtext | Event data (JSON) |
-| batchId | varchar(191) | Batch identifier |
+| batchId | char(36) | Batch identifier |
 
 ### Newly Added Tables (Token and Yield Statistics)
 

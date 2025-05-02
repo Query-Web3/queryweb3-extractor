@@ -11,7 +11,7 @@ SET time_zone = "+00:00";
 DROP TABLE IF EXISTS `acala_batchlog`;
 CREATE TABLE IF NOT EXISTS `acala_batchlog` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
-  `batchId` varchar(191) NOT NULL,
+  `batchId` char(36) NOT NULL,
   `startTime` datetime(3) NOT NULL DEFAULT current_timestamp(3),
   `endTime` datetime(3) DEFAULT NULL,
   `status` enum('0','1','2') NOT NULL DEFAULT '2',
@@ -31,7 +31,7 @@ CREATE TABLE IF NOT EXISTS `acala_block` (
   `number` int(11) NOT NULL,
   `hash` varchar(191) NOT NULL,
   `timestamp` datetime(3) NOT NULL DEFAULT current_timestamp(3),
-  `batchId` varchar(191) NOT NULL,
+  `batchId` char(36) NOT NULL,
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=1 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -44,7 +44,7 @@ CREATE TABLE IF NOT EXISTS `acala_event` (
   `section` varchar(191) NOT NULL,
   `method` varchar(191) NOT NULL,
   `data` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`data`)),
-  `batchId` varchar(191) NOT NULL,
+  `batchId` char(36) NOT NULL,
   PRIMARY KEY (`id`),
   KEY `acala_event_blockId_fkey` (`blockId`),
   KEY `acala_event_extrinsicId_fkey` (`extrinsicId`)
@@ -60,7 +60,7 @@ CREATE TABLE IF NOT EXISTS `acala_extrinsic` (
   `fee` varchar(191) DEFAULT NULL,
   `status` varchar(191) DEFAULT NULL,
   `params` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`params`)),
-  `batchId` varchar(191) NOT NULL,
+  `batchId` char(36) NOT NULL,
   PRIMARY KEY (`id`),
   KEY `acala_extrinsic_blockId_fkey` (`blockId`)
 ) ENGINE=InnoDB AUTO_INCREMENT=1 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
