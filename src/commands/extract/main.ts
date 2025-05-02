@@ -11,65 +11,73 @@ const EXTRACT_INTERVAL_MS = process.env.EXTRACT_INTERVAL_MS ? Number(process.env
 const LOCK_KEY = 'extract_data_lock';
 
 /**
- * Extracts data from the Acala network, including blocks, extrinsics, and events,
- * and stores them in the database. Updates the batch log status upon completion.
+ * Checks if the data extraction process is locked and attempts to acquire the lock.
+ * If the lock is already held and hasn't expired, it returns false. Otherwise, it acquires the lock and returns true.
  * 
- * @param batchLog - Optional object containing the batch log ID. Used to update the batch status.
- * @param startBlock - Optional starting block number
- * @param endBlock - Optional ending block number
+ * @param dataSource - The TypeORM DataSource instance used to interact with the database.
+ * @param batchId - The unique identifier for the current extraction batch.
+ * @returns A promise that resolves to a boolean indicating whether the lock was successfully acquired.
  */
-async function checkAndAcquireLock(dataSource: DataSource): Promise<boolean> {
+async function checkAndAcquireLock(dataSource: DataSource, batchId: string): Promise<boolean> {
+    // Get the repository for the BatchLog entity from the data source
     const lockRepo = dataSource.getRepository(BatchLog);
+    // Check if there is an existing lock in the database
     const existingLock = await lockRepo.findOne({
         where: { lockKey: LOCK_KEY }
     });
 
+    // If an existing lock is found
     if (existingLock) {
+        // Get the timestamp when the lock was set, default to 0 if not available
         const lockTime = existingLock.lockTime?.getTime() || 0;
+        // Get the current timestamp
         const currentTime = Date.now();
+        // Check if the lock is still valid (hasn't expired)
         if (currentTime - lockTime < EXTRACT_INTERVAL_MS) {
+            // Log the time when the lock will expire
             console.log(`Extract data is locked until ${new Date(lockTime + EXTRACT_INTERVAL_MS)}`);
+            // Return false if the lock is still valid
             return false;
         }
     }
 
-    // Acquire lock
+    // Acquire the lock by upserting a new record with the batch ID
     await lockRepo.upsert({
         lockKey: LOCK_KEY,
         lockTime: new Date(),
-        lockStatus: LockStatus.LOCKED
+        lockStatus: LockStatus.LOCKED,
+        batchId: batchId
     }, ['lockKey']);
 
+    // Return true if the lock was successfully acquired
     return true;
 }
 
-async function releaseLock(dataSource: DataSource, success: boolean = true) {
+async function releaseLock(dataSource: DataSource, batchId: string, success: boolean = true) {
     const lockRepo = dataSource.getRepository(BatchLog);
     await lockRepo.update({
         lockKey: LOCK_KEY
     }, {
         lockStatus: success ? LockStatus.UNLOCKED : LockStatus.FAILED,
-        lockTime: new Date()
+        lockTime: new Date(),
+        batchId: batchId
     });
 }
 
 export async function extractData(
-    batchLog?: {id: number}, 
+    batchLog: {id: number, batchId: string}, 
     startBlock?: number, 
     endBlock?: number
 ): Promise<{
     processedCount: number;
     lastProcessedHeight: number | null;
 }> {
-    // Generate a unique ID for the current data extraction batch
-    const batchId = uuidv4();
+    const batchId = batchLog.batchId;
     console.log(`Starting batch with ID: ${batchId}`);
 
-    // Initialize data source and check lock
     const dataSource = await initializeDataSource();
     
-    // Check and acquire lock
-    const hasLock = await checkAndAcquireLock(dataSource);
+    const hasLock = await checkAndAcquireLock(dataSource, batchId);
     if (!hasLock) {
         return {
             processedCount: 0,
@@ -77,11 +85,9 @@ export async function extractData(
         };
     }
     
-    // If no block range specified, get latest block from chain and highest from DB
     let isHistorical = startBlock !== undefined && endBlock !== undefined;
     
     if (!isHistorical) {
-        // Get highest block from database with proper error handling
         let dbHighest = 0;
         try {
             const highestBlock = await dataSource.getRepository(Block)
@@ -95,7 +101,6 @@ export async function extractData(
             dbHighest = 0;
         }
 
-        // Get latest block from chain
         const provider = new WsProvider('wss://acala-rpc.aca-api.network');
         const api = await ApiPromise.create(options({ provider }));
         const header = await api.rpc.chain.getHeader();
@@ -109,14 +114,13 @@ export async function extractData(
         console.log(`Auto-determined block range: ${startBlock} to ${endBlock}`);
     }
     
-    // Create a WebSocket provider with multiple endpoints and better error handling
     const endpoints = [
-        'wss://acala-rpc.aca-api.network', // Fallback endpoint
+        'wss://acala-rpc.aca-api.network',
         'wss://karura-rpc.dwellir.com',
         'wss://karura.polkawallet.io'
     ];
     
-    const provider = new WsProvider(endpoints, 2500); // 2.5s timeout
+    const provider = new WsProvider(endpoints, 2500);
     provider.on('error', (error) => {
         console.error('WebSocket Error:', error);
     });
@@ -127,7 +131,6 @@ export async function extractData(
         console.log('WebSocket disconnected from:', provider.endpoint);
     });
     
-    // Initialize API with better error handling and reconnection
     let api: ApiPromise | null = null;
     let retries = 0;
     const maxRetries = 3;
@@ -144,7 +147,7 @@ export async function extractData(
             if (retries >= maxRetries) {
                 throw new Error(`Failed to connect to API after ${maxRetries} attempts`);
             }
-            await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5 seconds before retry
+            await new Promise(resolve => setTimeout(resolve, 5000));
         }
     }
 
@@ -160,48 +163,95 @@ export async function extractData(
     }> = [];
     
     if (isHistorical) {
-        // Process historical blocks in range with batch processing
-        const BATCH_SIZE = 100; // Process 100 blocks at a time
-        let currentBatchStart = startBlock!;
+        const totalBlocks = endBlock! - startBlock! + 1;
+        console.log(`Total blocks to process: ${totalBlocks}`);
         
-        // First collect all blocks to process
-        while (currentBatchStart <= endBlock!) {
-            const currentBatchEnd = Math.min(currentBatchStart + BATCH_SIZE - 1, endBlock!);
-            console.log(`Collecting blocks ${currentBatchStart} to ${currentBatchEnd}`);
+        if (totalBlocks > 100) {
+            const batchSize = 100;
+            const totalBatches = Math.ceil(totalBlocks / batchSize);
+            console.log(`Processing ${totalBlocks} blocks in ${totalBatches} batches`);
             
-            for (let blockNumber = currentBatchStart; blockNumber <= currentBatchEnd; blockNumber++) {
-                try {
-                    const blockHash = await api.rpc.chain.getBlockHash(blockNumber);
-                    const header = await api.rpc.chain.getHeader(blockHash);
-                    
-                    // Check if block already exists in database
-                    const existingBlock = await (await initializeDataSource()).getRepository(Block).findOne({
-                        where: { number: blockNumber }
-                    });
-                    
-                    if (!existingBlock) {
-                        blocksToProcess.push({
-                            number: blockNumber,
-                            hash: blockHash.toString(),
-                            header,
-                            hashObj: blockHash
-                        });
-                    } else {
-                        console.log(`Skipping existing block ${blockNumber}`);
+            for (let batchNum = 0; batchNum < totalBatches; batchNum++) {
+                const batchStart = startBlock! + (batchNum * batchSize);
+                const batchEnd = Math.min(batchStart + batchSize - 1, endBlock!);
+                console.log(`Processing batch ${batchNum + 1}/${totalBatches}: blocks ${batchStart} to ${batchEnd}`);
+                
+                let currentBatchStart = batchStart;
+                while (currentBatchStart <= batchEnd) {
+                    const currentBatchEnd = Math.min(currentBatchStart + batchSize - 1, batchEnd);
+                    console.log(`Collecting blocks ${currentBatchStart} to ${currentBatchEnd}`);
+            
+                    for (let blockNumber = currentBatchStart; blockNumber <= currentBatchEnd; blockNumber++) {
+                        try {
+                            const blockHash = await api.rpc.chain.getBlockHash(blockNumber);
+                            const header = await api.rpc.chain.getHeader(blockHash);
+                            
+                            const existingBlock = await (await initializeDataSource()).getRepository(Block).findOne({
+                                where: { number: blockNumber }
+                            });
+                            
+                            if (!existingBlock) {
+                                blocksToProcess.push({
+                                    number: blockNumber,
+                                    hash: blockHash.toString(),
+                                    header,
+                                    hashObj: blockHash
+                                });
+                            } else {
+                                console.log(`Skipping existing block ${blockNumber}`);
+                            }
+                        } catch (e) {
+                            console.error(`Error processing block ${blockNumber}:`, e);
+                            continue;
+                        }
                     }
-                } catch (e) {
-                    console.error(`Error processing block ${blockNumber}:`, e);
-                    continue;
+                    currentBatchStart = currentBatchEnd + 1;
+                }
+                
+                if (batchLog) {
+                    await dataSource.getRepository(BatchLog).update(batchLog.id, {
+                        processed_block_count: (batchNum + 1) * batchSize,
+                        last_processed_height: batchEnd
+                    });
                 }
             }
-            currentBatchStart = currentBatchEnd + 1;
+        } else {
+            let currentBatchStart = startBlock!;
+            while (currentBatchStart <= endBlock!) {
+                const currentBatchEnd = Math.min(currentBatchStart + 100 - 1, endBlock!);
+                console.log(`Collecting blocks ${currentBatchStart} to ${currentBatchEnd}`);
+                
+                for (let blockNumber = currentBatchStart; blockNumber <= currentBatchEnd; blockNumber++) {
+                    try {
+                        const blockHash = await api.rpc.chain.getBlockHash(blockNumber);
+                        const header = await api.rpc.chain.getHeader(blockHash);
+                        
+                        const existingBlock = await (await initializeDataSource()).getRepository(Block).findOne({
+                            where: { number: blockNumber }
+                        });
+                        
+                        if (!existingBlock) {
+                            blocksToProcess.push({
+                                number: blockNumber,
+                                hash: blockHash.toString(),
+                                header,
+                                hashObj: blockHash
+                            });
+                        } else {
+                            console.log(`Skipping existing block ${blockNumber}`);
+                        }
+                    } catch (e) {
+                        console.error(`Error processing block ${blockNumber}:`, e);
+                        continue;
+                    }
+                }
+                currentBatchStart = currentBatchEnd + 1;
+            }
         }
     } else {
-        // Process latest block only (original behavior)
         const header = await api.rpc.chain.getHeader();
         console.log(`Connected to Acala network - Block Number: ${header.number}, Block Hash: ${header.hash}`);
         
-        // Check if block already exists
         const existingBlock = await (await initializeDataSource()).getRepository(Block).findOne({
             where: { number: header.number.toNumber() }
         });
@@ -218,19 +268,16 @@ export async function extractData(
             return {
                 processedCount: 0,
                 lastProcessedHeight: null
-            }; // No new blocks to process
+            };
         }
     }
 
-    // Get concurrency settings based on total blocks to process
     const { CONCURRENCY, CHUNK_SIZE } = getConcurrencySettings(blocksToProcess.length);
 
     let processedCount = 0;
     try {
-        // Split blocks using calculated CHUNK_SIZE
         const chunks = splitIntoChunks(blocksToProcess, CHUNK_SIZE);
 
-        // Process chunks in parallel with CONCURRENCY limit
         for (let i = 0; i < chunks.length; i += CONCURRENCY) {
             const currentChunks = chunks.slice(i, i + CONCURRENCY);
             const results = await Promise.all(
@@ -240,17 +287,15 @@ export async function extractData(
         }
     } catch (e) {
         console.error('Error processing blocks:', e);
-        await releaseLock(dataSource, false);
+        await releaseLock(dataSource, batchId, false);
         throw e;
     } finally {
-        // Disconnect from the network API
         if (api) {
             await api.disconnect();
         }
     }
     
     if (batchLog) {
-        // Update the batch log with processed block count and last height
         await dataSource.getRepository(BatchLog).update(batchLog.id, {
             endTime: new Date(),
             status: BatchStatus.SUCCESS,
@@ -260,8 +305,7 @@ export async function extractData(
         });
     }
 
-    // Release lock
-    await releaseLock(dataSource);
+    await releaseLock(dataSource, batchId);
 
     return {
         processedCount: processedCount,

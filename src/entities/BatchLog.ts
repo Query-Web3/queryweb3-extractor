@@ -46,12 +46,12 @@ export class BatchLog {
   @Column({ type: 'int', nullable: true })
   last_processed_height: number | null;
 
-  @Column({ nullable: true })
+  @Column({ name: 'lock_key', nullable: true })
   lockKey?: string;
 
-  @Column({ type: 'timestamp', nullable: true })
+  @Column({ name: 'lock_time', type: 'timestamp', nullable: true })
   lockTime?: Date;
 
-  @Column({ type: 'enum', enum: LockStatus, nullable: true })
+  @Column({ name: 'lock_status', type: 'enum', enum: LockStatus, nullable: true })
   lockStatus?: LockStatus;
 }
