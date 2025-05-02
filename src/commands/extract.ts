@@ -227,10 +227,46 @@ export async function extractData(batchLog?: {id: number}, startBlock?: number, 
                     let fee = '0';
                     try {
                         // Get the payment information for the extrinsic to calculate the fee
-                        console.log(`Getting payment info for extrinsic ${index} with signer ${ext.signer?.toString()}`);
-                        const paymentInfo = await api!.tx(ext.method).paymentInfo(ext.signer);
-                        fee = paymentInfo.partialFee.toString();
-                        console.log(`Payment info for extrinsic ${index}: ${JSON.stringify(paymentInfo.toHuman())}`);
+                        if (ext.signer && ext.method && api && api.isConnected) {
+                            console.log(`Getting payment info for extrinsic ${index} with signer ${ext.signer.toString()}`);
+                            try {
+                                // Validate extrinsic method exists
+                                if (!api.tx[ext.method.section]?.[ext.method.method]) {
+                                    console.warn(`Extrinsic method ${ext.method.section}.${ext.method.method} not found in API`);
+                                    fee = '0';
+                                } else {
+                                    const tx = api.tx(ext.method);
+                                    if (!tx) {
+                                        throw new Error('Failed to create transaction object');
+                                    }
+                                    // Add timeout for payment info call
+                                    const paymentInfo = await Promise.race<{
+                                        partialFee: { toString: () => string };
+                                        toHuman: () => Record<string, any>;
+                                    }>([
+                                        tx.paymentInfo(ext.signer),
+                                        new Promise((_, reject) =>
+                                            setTimeout(() => reject(new Error('Payment info timeout')), 5000)
+                                        )
+                                    ]);
+                                    if (!paymentInfo || !paymentInfo.partialFee) {
+                                        throw new Error('Invalid payment info response');
+                                    }
+                                    fee = paymentInfo.partialFee.toString();
+                                    console.log(`Payment info for extrinsic ${index}: ${JSON.stringify(paymentInfo.toHuman())}`);
+                                }
+                            } catch (e) {
+                                console.error(`Failed to get payment info for extrinsic ${index}:`, e);
+                                fee = '0';
+                            }
+                        } else {
+                            if (!ext.signer) {
+                                console.log(`Skipping payment info for unsigned extrinsic ${index}`);
+                            } else if (!api || !api.isConnected) {
+                                console.error('API connection not available for payment info');
+                            }
+                            fee = '0';
+                        }
                     } catch (e) {
                         console.error(`Failed to get payment info for extrinsic ${index}:`, e);
                         fee = '0';
