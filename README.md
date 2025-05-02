@@ -34,97 +34,131 @@ A tool to extract and store detailed transaction information from Acala network.
 ## Database Schema
 
 ### Block Table (`acala_block`)
-- id: Auto-increment ID
-- number: Block number
-- hash: Block hash
-- timestamp: Block creation time
+| Field | Type | Description |
+|-------|------|-------------|
+| id | int(11) | Auto-increment ID |
+| number | int(11) | Block number |
+| hash | varchar(191) | Block hash |
+| timestamp | datetime(3) | Block creation time |
+| batchId | varchar(191) | Batch identifier |
 
 ### Batch Log Table (`acala_batchlog`)
-- id: Auto-increment ID
-- batchId: Batch identifier
-- startTime: Batch start time
-- endTime: Batch end time (nullable)
-- status: Batch status (FAILED/SUCCESS/RUNNING)
-- retryCount: Number of retry attempts
+| Field | Type | Description |
+|-------|------|-------------|
+| id | int(11) | Auto-increment ID |
+| batchId | varchar(191) | Batch identifier |
+| startTime | datetime(3) | Batch start time |
+| endTime | datetime(3) | Batch end time (nullable) |
+| status | enum('0','1','2') | Batch status (0=FAILED, 1=SUCCESS, 2=RUNNING) |
+| retryCount | int(11) | Number of retry attempts |
+| type | enum('1','2') | Batch type |
+| processed_block_count | int(11) | Number of processed blocks |
+| last_processed_height | int(11) | Last processed block height |
+| lock_key | varchar(191) | Lock key for distributed processing |
+| lock_time | datetime(3) | Lock timestamp |
+| lock_status | smallint | Lock status |
 
 ### Extrinsic Table (`acala_extrinsic`)
-- id: Auto-increment ID
-- blockId: Reference to block
-- index: Transaction index in block
-- method: Transaction method
-- signer: Signer address
-- fee: Transaction fee
-- status: Transaction status
-- params: Transaction parameters (JSON)
+| Field | Type | Description |
+|-------|------|-------------|
+| id | int(11) | Auto-increment ID |
+| blockId | int(11) | Reference to block |
+| index | int(11) | Transaction index in block |
+| method | text | Transaction method |
+| signer | varchar(191) | Signer address |
+| fee | varchar(191) | Transaction fee |
+| status | varchar(191) | Transaction status |
+| params | longtext | Transaction parameters (JSON) |
+| batchId | varchar(191) | Batch identifier |
 
 ### Event Table (`acala_event`)
-- id: Auto-increment ID
-- blockId: Reference to block
-- extrinsicId: Reference to transaction (nullable)
-- index: Event index
-- section: Event section (e.g. system, balances, dex, homa, incentives, etc.)
-- method: Event method (e.g. Transfer for balances section, Swap for dex section, etc.)
-- data: Event data (JSON)
+| Field | Type | Description |
+|-------|------|-------------|
+| id | int(11) | Auto-increment ID |
+| blockId | int(11) | Reference to block |
+| extrinsicId | int(11) | Reference to transaction (nullable) |
+| index | int(11) | Event index |
+| section | varchar(191) | Event section (e.g. system, balances, dex) |
+| method | varchar(191) | Event method (e.g. Transfer, Swap) |
+| data | longtext | Event data (JSON) |
+| batchId | varchar(191) | Batch identifier |
 
 ### Newly Added Tables (Token and Yield Statistics)
 
 #### Chain Table (`dim_chains`)
-- id: Auto-increment ID
-- name: Network name (e.g. Polkadot, Kusama)
-- chainId: Chain ID
-- createdAt: Record creation time
-- updatedAt: Record update time
+| Field | Type | Description |
+|-------|------|-------------|
+| id | int | Auto-increment ID |
+| name | varchar(50) | Network name (e.g. Polkadot, Kusama) |
+| chain_id | int | Chain ID |
+| created_at | timestamp | Record creation time |
+| updated_at | timestamp | Record update time |
+| latest_block | int | Latest block height |
+| latest_block_time | timestamp | Latest block time |
 
 #### Asset Type Table (`dim_asset_types`)
-- id: Auto-increment ID
-- name: Asset type name (e.g. DeFi, GameFi, NFT)
-- createdAt: Record creation time
+| Field | Type | Description |
+|-------|------|-------------|
+| id | int | Auto-increment ID |
+| name | varchar(50) | Asset type name (e.g. DeFi, GameFi, NFT) |
+| created_at | timestamp | Record creation time |
 
 #### Return Type Table (`dim_return_types`)
-- id: Auto-increment ID
-- name: Return type name (e.g. Staking, Farming, Lending)
-- createdAt: Record creation time
+| Field | Type | Description |
+|-------|------|-------------|
+| id | int | Auto-increment ID |
+| name | varchar(50) | Return type name (e.g. Staking, Farming, Lending) |
+| created_at | timestamp | Record creation time |
 
 #### Token Table (`dim_tokens`)
-- id: Auto-increment ID
-- chainId: Reference to chain
-- address: Token contract address
-- symbol: Token symbol
-- name: Token name
-- decimals: Token decimals
-- assetTypeId: Reference to asset type
-- createdAt: Record creation time
-- updatedAt: Record update time
+| Field | Type | Description |
+|-------|------|-------------|
+| id | int | Auto-increment ID |
+| chain_id | int | Reference to chain |
+| address | varchar(42) | Token contract address |
+| symbol | varchar(20) | Token symbol |
+| name | varchar(100) | Token name |
+| decimals | int | Token decimals |
+| asset_type_id | int | Reference to asset type |
+| price_usd | decimal(65,18) | USD price |
+| created_at | timestamp | Record creation time |
+| updated_at | timestamp | Record update time |
 
 #### Token Daily Stats Table (`fact_token_daily_stats`)
-- id: Auto-increment ID
-- tokenId: Reference to token
-- date: Stat date
-- volume: Trading volume
-- volumeUsd: Trading volume in USD
-- txnsCount: Transaction count
-- priceUsd: Token price in USD
-- volumeYoy: Year-over-year volume growth (%)
-- volumeQoq: Quarter-over-quarter volume growth (%)
-- txnsYoy: Year-over-year transaction count growth (%)
-- createdAt: Record creation time
+| Field | Type | Description |
+|-------|------|-------------|
+| id | bigint | Auto-increment ID |
+| token_id | int | Reference to token |
+| date | date | Stat date |
+| volume | decimal(65,18) | Trading volume |
+| volume_usd | decimal(65,18) | Trading volume in USD |
+| txns_count | int | Transaction count |
+| price_usd | decimal(65,18) | Token price in USD |
+| volume_yoy | decimal(10,2) | Year-over-year volume growth (%) |
+| volume_qoq | decimal(10,2) | Quarter-over-quarter volume growth (%) |
+| txns_yoy | decimal(10,2) | Year-over-year transaction count growth (%) |
+| created_at | timestamp | Record creation time |
 
 #### Yield Stats Table (`fact_yield_stats`)
-- id: Auto-increment ID
-- tokenId: Reference to token
-- returnTypeId: Reference to return type
-- poolAddress: Liquidity pool address
-- date: Stat date
-- apy: Annual percentage yield (%)
-- tvl: Total value locked
-- tvlUsd: Total value locked in USD
-- createdAt: Record creation time
+| Field | Type | Description |
+|-------|------|-------------|
+| id | bigint | Auto-increment ID |
+| token_id | int | Reference to token |
+| return_type_id | int | Reference to return type |
+| pool_address | varchar(42) | Liquidity pool address |
+| date | date | Stat date |
+| apy | decimal(10,2) | Annual percentage yield (%) |
+| tvl | decimal(65,18) | Total value locked |
+| tvl_usd | decimal(65,18) | Total value locked in USD |
+| created_at | timestamp | Record creation time |
 
 #### Stat Cycle Table (`dim_stat_cycles`)
-- id: Auto-increment ID
-- name: Cycle name (daily, weekly, monthly, yearly)
-- days: Number of days in cycle
-- createdAt: Record creation time
+| Field | Type | Description |
+|-------|------|-------------|
+| id | int | Auto-increment ID |
+| name | varchar(20) | Cycle name (daily, weekly, monthly, yearly) |
+| days | int | Number of days in cycle |
+| created_at | timestamp | Record creation time |
 
 ### Event Section and Method Details
 
@@ -254,8 +288,8 @@ Example output:
 
 When running the extract command, you can specify:
 
-- `--startBlock`: Starting block number (inclusive)
-- `--endBlock`: Ending block number (inclusive)
+- `-s|--startBlock`: Starting block number (inclusive)
+- `-e|--endBlock`: Ending block number (inclusive)
 
 Example:
 ```bash
@@ -299,10 +333,25 @@ pm2 logs
 ```
 
 ### Configuration options (in `.env`):
-- `EXTRACT_INTERVAL_MS`: Extract polling interval in milliseconds (default: 3600000 - 1 hour)
-- `TRANSFORM_INTERVAL_MS`: Transform polling interval in milliseconds (default: 3600000 - 1 hour)
-- `ACALA_RPC_URL`: Acala network RPC endpoint (default: wss://acala-rpc.aca-api.network)
-- `KARURA_RPC_URL`: Karura network RPC endpoint (default: wss://karura.api.onfinality.io/public-ws)
+- Database Connection (Required):
+  - `EXTRACT_DB_HOST`: Extract database host (default: "127.0.0.1")
+  - `EXTRACT_DB_PORT`: Extract database port (default: "3306")
+  - `EXTRACT_DB_USER`: Extract database username (default: "root")
+  - `EXTRACT_DB_PASSWORD`: Extract database password (default: "password")
+  - `EXTRACT_DB_NAME`: Extract database name (default: "QUERYWEB3")
+  - `TRANSFORM_DB_HOST`: Transform database host (default: "127.0.0.1")
+  - `TRANSFORM_DB_PORT`: Transform database port (default: "3306")
+  - `TRANSFORM_DB_USER`: Transform database username (default: "root")
+  - `TRANSFORM_DB_PASSWORD`: Transform database password (default: "password")
+  - `TRANSFORM_DB_NAME`: Transform database name (default: "QUERYWEB3")
+
+- Task Scheduling:
+  - `EXTRACT_INTERVAL_MS`: Extract polling interval in milliseconds (default: 3600000 - 1 hour)
+  - `TRANSFORM_INTERVAL_MS`: Transform polling interval in milliseconds (default: 3600000 - 1 hour)
+
+- Network Endpoints:
+  - `ACALA_RPC_URL`: Acala network RPC endpoint (default: wss://acala-rpc.aca-api.network)
+  - `KARURA_RPC_URL`: Karura network RPC endpoint (default: wss://karura.api.onfinality.io/public-ws)
 
 ## License
 
