@@ -9,7 +9,7 @@ import { ApiPromise, WsProvider } from '@polkadot/api';
 import { options } from '@acala-network/api';
 import { v4 as uuidv4 } from 'uuid';
 
-// 初始化数据源
+// Initialize data source
 let dataSource: DataSource;
 
 async function initializeDataSource() {
@@ -56,8 +56,6 @@ export async function extractData(batchLog?: {id: number}, startBlock?: number, 
             dbHighest = 0;
         }
 
-
-        
         // Get latest block from chain
         const provider = new WsProvider('wss://acala-rpc.aca-api.network');
         const api = await ApiPromise.create(options({ provider }));
@@ -115,40 +113,47 @@ export async function extractData(batchLog?: {id: number}, startBlock?: number, 
         throw new Error('API connection could not be established');
     }
     
-    let blocksToProcess = [];
+    let blocksToProcess: Array<{
+        number: number;
+        hash: string;
+        header: any;
+        hashObj: any;
+    }> = [];
+    
     if (isHistorical) {
         // Process historical blocks in range with batch processing
         const BATCH_SIZE = 100; // Process 100 blocks at a time
         let currentBatchStart = startBlock!;
         
+        // First collect all blocks to process
         while (currentBatchStart <= endBlock!) {
             const currentBatchEnd = Math.min(currentBatchStart + BATCH_SIZE - 1, endBlock!);
-            console.log(`Processing blocks ${currentBatchStart} to ${currentBatchEnd}`);
+            console.log(`Collecting blocks ${currentBatchStart} to ${currentBatchEnd}`);
             
             for (let blockNumber = currentBatchStart; blockNumber <= currentBatchEnd; blockNumber++) {
-            try {
-                const blockHash = await api.rpc.chain.getBlockHash(blockNumber);
-                const header = await api.rpc.chain.getHeader(blockHash);
-                
-                // Check if block already exists in database
-                const existingBlock = await (await initializeDataSource()).getRepository(Block).findOne({
-                    where: { number: blockNumber }
-                });
-                
-                if (!existingBlock) {
-                    blocksToProcess.push({
-                        number: blockNumber,
-                        hash: blockHash.toString(),
-                        header,
-                        hashObj: blockHash
+                try {
+                    const blockHash = await api.rpc.chain.getBlockHash(blockNumber);
+                    const header = await api.rpc.chain.getHeader(blockHash);
+                    
+                    // Check if block already exists in database
+                    const existingBlock = await (await initializeDataSource()).getRepository(Block).findOne({
+                        where: { number: blockNumber }
                     });
-                } else {
-                    console.log(`Skipping existing block ${blockNumber}`);
+                    
+                    if (!existingBlock) {
+                        blocksToProcess.push({
+                            number: blockNumber,
+                            hash: blockHash.toString(),
+                            header,
+                            hashObj: blockHash
+                        });
+                    } else {
+                        console.log(`Skipping existing block ${blockNumber}`);
+                    }
+                } catch (e) {
+                    console.error(`Error processing block ${blockNumber}:`, e);
+                    continue;
                 }
-            } catch (e) {
-                console.error(`Error processing block ${blockNumber}:`, e);
-                continue;
-            }
             }
             currentBatchStart = currentBatchEnd + 1;
         }
@@ -178,22 +183,37 @@ export async function extractData(batchLog?: {id: number}, startBlock?: number, 
         }
     }
 
-    // 获取CPU核心数作为并行度
+    // Get CPU core count for parallel processing
     const os = require('os');
-    const CONCURRENCY = Math.max(1, Math.floor(os.cpus().length / 2)); // 最多使用一半CPU核心
-    console.log(`Using ${CONCURRENCY} parallel workers`);
+    const cpuCount = os.cpus().length;
+    const CONCURRENCY = Math.max(1, Math.floor(cpuCount / 2)); // Use at most half of CPU cores
+    console.log(`Using ${CONCURRENCY} parallel workers (${cpuCount} cores available)`);
+
+    // Ensure each parallel group doesn't exceed CPU core limits
+    const CHUNK_SIZE = Math.min(100, CONCURRENCY * 20); // Max 100 blocks per group or 20x CPU capacity
 
     let processedCount = 0;
     try {
-        // Process blocks sequentially with progress display
-        const totalBlocks = blocksToProcess.length;
+        // Progress manager
+        const progressMap = new Map<number, {current: number, total: number}>();
+        let lastProgressUpdate = 0;
         
-        for (let i = 0; i < totalBlocks; i++) {
-            const block = blocksToProcess[i];
-            const progress = Math.round(((i + 1) / totalBlocks) * 100);
-            console.log(`Processing block ${block.number} (${i + 1}/${totalBlocks}, ${progress}%)`);
-            processedCount++;
+        // Update progress display
+        const updateProgress = () => {
+            const now = Date.now();
+            if (now - lastProgressUpdate < 1000) return; // Update once per second
+            lastProgressUpdate = now;
             
+            console.log('\nCurrent parallel processing progress:');
+            progressMap.forEach((progress, workerId) => {
+                const percent = Math.round((progress.current / progress.total) * 100);
+                console.log(`Worker ${workerId}: ${progress.current}/${progress.total} (${percent}%)`);
+            });
+            console.log('');
+        };
+
+        // Split blocks into parallel processing groups
+        const processBlock = async (block: any, workerId: number) => {
             try {
                 if (!api) throw new Error('API not initialized');
                 
@@ -201,7 +221,7 @@ export async function extractData(batchLog?: {id: number}, startBlock?: number, 
                 const signedBlock = await api.rpc.chain.getBlock(block.hashObj);
                 // Get the system events for the current block
                 const events = await api.query.system.events.at(block.hashObj);
-    
+
                 // Process each extrinsic in the block to extract relevant information
                 const extrinsics = await Promise.all(signedBlock.block.extrinsics.map(async (ext: any, index: number) => {
                     let fee = '0';
@@ -226,80 +246,146 @@ export async function extractData(batchLog?: {id: number}, startBlock?: number, 
                     };
                 }));
 
-    
-                // Create a block record in the database
-                const blockRecord = await (await initializeDataSource()).getRepository(Block).save({
-                    number: block.number,
-                    hash: block.hash,
-                    batchId
-                });
-            
-                if (extrinsics.length > 0) {
-                    // Create records for each extrinsic in the database
-                    const createdExtrinsics = await Promise.all(extrinsics.map(async ext => {
-                        // Check if extrinsic already exists
-                        const existingExtrinsic = await (await initializeDataSource()).getRepository(Extrinsic).findOne({
-                            where: {
-                                blockId: blockRecord.id,
-                                index: ext.index
-                            }
-                        });
-                        
-                        if (!existingExtrinsic) {
-                            return await (await initializeDataSource()).getRepository(Extrinsic).save({
-                                blockId: blockRecord.id,
-                                index: ext.index,
-                                method: ext.method,
-                                signer: ext.signer,
-                                fee: ext.fee,
-                                status: ext.status,
-                                params: ext.params,
-                                batchId
-                            });
-                        }
-                        return existingExtrinsic;
-                    }).filter(Boolean));
+                // Use transaction to save block data
+                const dataSource = await initializeDataSource();
+                const queryRunner = dataSource.createQueryRunner();
+                await queryRunner.connect();
+                await queryRunner.startTransaction();
+                
+                try {
+                    // Create a block record in the database
+                    const blockRecord = await queryRunner.manager.getRepository(Block).save({
+                        number: block.number,
+                        hash: block.hash,
+                        batchId
+                    });
                     
-                    // Create records for each event in the database
-                    await Promise.all((events as any).map(async (record: any, index: number) => {
-                        const { event, phase } = record;
-                        // Determine the associated extrinsic ID based on the event phase
-                        const extrinsicId = phase.isApplyExtrinsic
-                            ? createdExtrinsics[phase.asApplyExtrinsic.toNumber()]?.id
-                            : null;
-                            
-                        // Check if event already exists
-                        const existingEvent = await (await initializeDataSource()).getRepository(Event).findOne({
-                            where: {
-                                block: { id: blockRecord.id },
-                                index: index
-                            }
-                        });
-                        
-                        if (!existingEvent) {
-                            return await (await initializeDataSource()).getRepository(Event).save({
-                                block: { id: blockRecord.id },
-                                extrinsic: extrinsicId ? { id: extrinsicId } : undefined,
-                                index,
-                                section: event.section,
-                                method: event.method,
-                                data: event.data.toHuman(),
-                                batchId
+                    if (extrinsics.length > 0) {
+                        // Create records for each extrinsic in the database
+                        const createdExtrinsics = await Promise.all(extrinsics.map(async ext => {
+                            // Check if extrinsic already exists
+                            const existingExtrinsic = await queryRunner.manager.getRepository(Extrinsic).findOne({
+                                where: {
+                                    blockId: blockRecord.id,
+                                    index: ext.index
+                                }
                             });
-                        }
-                    }).filter(Boolean));
+                            
+                            if (!existingExtrinsic) {
+                                return await queryRunner.manager.getRepository(Extrinsic).save({
+                                    blockId: blockRecord.id,
+                                    index: ext.index,
+                                    method: ext.method,
+                                    signer: ext.signer,
+                                    fee: ext.fee,
+                                    status: ext.status,
+                                    params: ext.params,
+                                    batchId
+                                });
+                            }
+                            return existingExtrinsic;
+                        }).filter(Boolean));
+                        
+                        // Create records for each event in the database
+                        await Promise.all((events as any).map(async (record: any, index: number) => {
+                            const { event, phase } = record;
+                            // Determine the associated extrinsic ID based on the event phase
+                            const extrinsicId = phase.isApplyExtrinsic
+                                ? createdExtrinsics[phase.asApplyExtrinsic.toNumber()]?.id
+                                : null;
+                                
+                            // Check if event already exists
+                            const existingEvent = await queryRunner.manager.getRepository(Event).findOne({
+                                where: {
+                                    block: { id: blockRecord.id },
+                                    index: index
+                                }
+                            });
+                        
+                            if (!existingEvent) {
+                                return await queryRunner.manager.getRepository(Event).save({
+                                    block: { id: blockRecord.id },
+                                    extrinsic: extrinsicId ? { id: extrinsicId } : undefined,
+                                    index,
+                                    section: event.section,
+                                    method: event.method,
+                                    data: event.data.toHuman(),
+                                    batchId
+                                });
+                            }
+                            return null;
+                        }));
+                    }
+                    
+                    // Commit transaction
+                    await queryRunner.commitTransaction();
+                    return { success: true, blockNumber: block.number };
+                } catch (e) {
+                    // Rollback transaction
+                    await queryRunner.rollbackTransaction();
+                    console.error(`Error processing block ${block.number}:`, e);
+                    return { success: false, blockNumber: block.number, error: e };
+                } finally {
+                    // Release queryRunner
+                    await queryRunner.release();
                 }
             } catch (e) {
                 console.error(`Error processing block ${block.number}:`, e);
-                continue;
+                return { success: false, blockNumber: block.number, error: e };
             }
+        };
+
+        // Split blocks using calculated CHUNK_SIZE
+        const totalBlocks = blocksToProcess.length;
+        const chunks = [];
+        
+        for (let i = 0; i < totalBlocks; i += CHUNK_SIZE) {
+            chunks.push(blocksToProcess.slice(i, i + CHUNK_SIZE));
+        }
+
+        // Process each block group in parallel
+        for (const chunk of chunks) {
+            console.log(`Processing chunk of ${chunk.length} blocks (${chunk[0].number} to ${chunk[chunk.length-1].number})`);
+            
+            // Assign unique ID to each worker
+            let workerId = 0;
+            
+            // Process all blocks in current group in parallel
+            const results = await Promise.all(chunk.map(block => {
+                const currentWorkerId = workerId++;
+                progressMap.set(currentWorkerId, {
+                    current: 0,
+                    total: chunk.length
+                });
+                
+                // Update progress display
+                updateProgress();
+                
+                return processBlock(block, currentWorkerId)
+                    .then(result => {
+                        // Update progress when completed
+                        const progress = progressMap.get(currentWorkerId);
+                        if (progress) {
+                            progress.current++;
+                            updateProgress();
+                        }
+                        return result;
+                    });
+            }));
+
+            // Count successful results
+            const successCount = results.filter((r: any) => r.success).length;
+            processedCount += successCount;
+            console.log(`Processed ${successCount}/${chunk.length} blocks in current chunk`);
         }
     } catch (e) {
         console.error('Error processing blocks:', e);
+    } finally {
+        // Disconnect from the network API
+        if (api) {
+            await api.disconnect();
+        }
     }
-    
-    // Disconnect from the network API
-    await api!.disconnect();
     
     if (batchLog) {
         // Update the batch log with processed block count and last height
@@ -310,7 +396,6 @@ export async function extractData(batchLog?: {id: number}, startBlock?: number, 
             last_processed_height: blocksToProcess.length > 0 ? 
                 blocksToProcess[blocksToProcess.length - 1].number : null
         });
-        
     }
 
     return {

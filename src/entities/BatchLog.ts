@@ -37,6 +37,6 @@ export class BatchLog {
   @Column({ default: 0 })
   processed_block_count: number;
 
-  @Column({ nullable: true })
+  @Column({ type: 'int', nullable: true })
   last_processed_height: number | null;
 }
