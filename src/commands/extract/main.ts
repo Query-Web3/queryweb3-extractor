@@ -177,17 +177,21 @@ export async function extractData(
         }
     }
 
-    // Get concurrency settings
-    const { CHUNK_SIZE } = getConcurrencySettings();
+    // Get concurrency settings based on total blocks to process
+    const { CONCURRENCY, CHUNK_SIZE } = getConcurrencySettings(blocksToProcess.length);
 
     let processedCount = 0;
     try {
         // Split blocks using calculated CHUNK_SIZE
         const chunks = splitIntoChunks(blocksToProcess, CHUNK_SIZE);
 
-        // Process each block group in parallel
-        for (const chunk of chunks) {
-            processedCount += await processChunk(chunk, api, batchId);
+        // Process chunks in parallel with CONCURRENCY limit
+        for (let i = 0; i < chunks.length; i += CONCURRENCY) {
+            const currentChunks = chunks.slice(i, i + CONCURRENCY);
+            const results = await Promise.all(
+                currentChunks.map(chunk => processChunk(chunk, api, batchId))
+            );
+            processedCount += results.reduce((sum, count) => sum + count, 0);
         }
     } catch (e) {
         console.error('Error processing blocks:', e);

@@ -163,12 +163,17 @@ export async function processBlock(
             
             // Commit transaction
             await queryRunner.commitTransaction();
-            return { success: true, blockNumber: block.number };
+            return {
+                number: block.number,
+                hash: block.hash,
+                batchId,
+                timestamp: new Date()
+            };
         } catch (e) {
             // Rollback transaction
             await queryRunner.rollbackTransaction();
             console.error(`Error processing block ${block.number}:`, e);
-            return { success: false, blockNumber: block.number, error: e };
+            throw e;
         } finally {
             // Release queryRunner
             await queryRunner.release();

@@ -6,11 +6,11 @@ import { Block } from '../../entities/Block';
 /**
  * Calculates optimal concurrency settings based on CPU cores
  */
-export function getConcurrencySettings() {
+export function getConcurrencySettings(totalBlocks?: number) {
     const cpuCount = os.cpus().length;
     const CONCURRENCY = Math.max(1, Math.floor(cpuCount / 2)); // Use at most half of CPU cores
-    const CHUNK_SIZE = Math.min(100, CONCURRENCY * 20); // Max 100 blocks per group or 20x CPU capacity
-    console.log(`Using ${CONCURRENCY} parallel workers (${cpuCount} cores available)`);
+    const CHUNK_SIZE = totalBlocks ? Math.max(1, Math.ceil(totalBlocks / CONCURRENCY)) : 100;
+    console.log(`Using ${CONCURRENCY} parallel workers (${cpuCount} cores available), chunk size: ${CHUNK_SIZE}`);
     return { CONCURRENCY, CHUNK_SIZE };
 }
 
@@ -60,7 +60,7 @@ export async function processChunk(
             const startBlock = chunk[0]?.number || 0;
             const endBlock = chunk[chunk.length - 1]?.number || 0;
             const blockProgress = Math.round((currentBlock - startBlock) / (endBlock - startBlock + 1) * 100);
-            console.log(`Worker ${workerId}: Block ${currentBlock} (${blockProgress}%)`);
+            console.log(`Worker id: ${workerId} with blocks from ${startBlock} to ${endBlock}`);
         });
         console.log('');
     };
@@ -90,14 +90,38 @@ export async function processChunk(
                     const startBlock = chunk[0].number;
                     const endBlock = chunk[chunk.length - 1].number;
                     const blockProgress = Math.round((currentBlock - startBlock) / (endBlock - startBlock + 1) * 100);
-                    console.log(`Processed block ${currentBlock} (${blockProgress}%)`);
+                    console.log(`Processed block ${currentBlock}`);
                 }
                 return result;
             });
     }));
 
-    // Count successful results
-    const successCount = results.filter((r: any) => r.success).length;
-    console.log(`Processed ${successCount}/${chunk.length} blocks in current chunk`);
-    return successCount;
+    // Filter out any failed results (where error exists) and ensure they have number property
+    const successfulResults = results.filter(r => !r.error && typeof r.number === 'number');
+    const failedCount = results.length - successfulResults.length;
+    
+    if (failedCount > 0) {
+        console.warn(`Failed to process ${failedCount}/${chunk.length} blocks in current chunk`);
+    }
+    
+    // Sort successful results by block number
+    const sortedResults = successfulResults
+        .sort((a, b) => {
+            if (typeof a.number !== 'number' || typeof b.number !== 'number') return 0;
+            return a.number - b.number;
+        });
+    
+    // Batch write sorted results to database
+    if (sortedResults.length > 0) {
+        try {
+            const dataSource = await initializeDataSource();
+            const blockRepository = dataSource.getRepository(Block);
+            await blockRepository.insert(sortedResults);
+            console.log(`Saved ${sortedResults.length} blocks to database`);
+        } catch (e) {
+            console.error('Failed to save blocks to database:', e);
+        }
+    }
+    
+    return successfulResults.length;
 }
