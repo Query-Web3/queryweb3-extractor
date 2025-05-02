@@ -227,7 +227,7 @@ export async function extractData(batchLog?: {id: number}, startBlock?: number, 
                     let fee = '0';
                     try {
                         // Get the payment information for the extrinsic to calculate the fee
-                        if (ext.signer && ext.method && api && api.isConnected) {
+                        if (ext && ext.isSigned && ext.signer && ext.method && api && api.isConnected) {
                             console.log(`Getting payment info for extrinsic ${index} with signer ${ext.signer.toString()}`);
                             try {
                                 // Validate extrinsic method exists
@@ -236,8 +236,8 @@ export async function extractData(batchLog?: {id: number}, startBlock?: number, 
                                     fee = '0';
                                 } else {
                                     const tx = api.tx(ext.method);
-                                    if (!tx) {
-                                        throw new Error('Failed to create transaction object');
+                                    if (!tx || !tx.isSigned) {
+                                        throw new Error('Invalid or unsigned transaction');
                                     }
                                     // Add timeout for payment info call
                                     const paymentInfo = await Promise.race<{
