@@ -1,5 +1,5 @@
 import { DataSource } from 'typeorm';
-import { BatchLog, BatchStatus } from '../../entities/BatchLog';
+import { BatchLog, BatchStatus, LockStatus } from '../../entities/BatchLog';
 import { Block } from '../../entities/Block';
 import { ApiPromise, WsProvider } from '@polkadot/api';
 import { options } from '@acala-network/api';
@@ -8,6 +8,7 @@ import { initializeDataSource } from './dataSource';
 import { getConcurrencySettings, splitIntoChunks, processChunk } from './parallelManager';
 
 const EXTRACT_INTERVAL_MS = process.env.EXTRACT_INTERVAL_MS ? Number(process.env.EXTRACT_INTERVAL_MS) : 3600000;
+const LOCK_KEY = 'extract_data_lock';
 
 /**
  * Extracts data from the Acala network, including blocks, extrinsics, and events,
@@ -17,6 +18,41 @@ const EXTRACT_INTERVAL_MS = process.env.EXTRACT_INTERVAL_MS ? Number(process.env
  * @param startBlock - Optional starting block number
  * @param endBlock - Optional ending block number
  */
+async function checkAndAcquireLock(dataSource: DataSource): Promise<boolean> {
+    const lockRepo = dataSource.getRepository(BatchLog);
+    const existingLock = await lockRepo.findOne({
+        where: { lockKey: LOCK_KEY }
+    });
+
+    if (existingLock) {
+        const lockTime = existingLock.lockTime?.getTime() || 0;
+        const currentTime = Date.now();
+        if (currentTime - lockTime < EXTRACT_INTERVAL_MS) {
+            console.log(`Extract data is locked until ${new Date(lockTime + EXTRACT_INTERVAL_MS)}`);
+            return false;
+        }
+    }
+
+    // Acquire lock
+    await lockRepo.upsert({
+        lockKey: LOCK_KEY,
+        lockTime: new Date(),
+        lockStatus: LockStatus.LOCKED
+    }, ['lockKey']);
+
+    return true;
+}
+
+async function releaseLock(dataSource: DataSource, success: boolean = true) {
+    const lockRepo = dataSource.getRepository(BatchLog);
+    await lockRepo.update({
+        lockKey: LOCK_KEY
+    }, {
+        lockStatus: success ? LockStatus.UNLOCKED : LockStatus.FAILED,
+        lockTime: new Date()
+    });
+}
+
 export async function extractData(
     batchLog?: {id: number}, 
     startBlock?: number, 
@@ -29,8 +65,17 @@ export async function extractData(
     const batchId = uuidv4();
     console.log(`Starting batch with ID: ${batchId}`);
 
-    // Initialize data source
+    // Initialize data source and check lock
     const dataSource = await initializeDataSource();
+    
+    // Check and acquire lock
+    const hasLock = await checkAndAcquireLock(dataSource);
+    if (!hasLock) {
+        return {
+            processedCount: 0,
+            lastProcessedHeight: null
+        };
+    }
     
     // If no block range specified, get latest block from chain and highest from DB
     let isHistorical = startBlock !== undefined && endBlock !== undefined;
@@ -195,6 +240,8 @@ export async function extractData(
         }
     } catch (e) {
         console.error('Error processing blocks:', e);
+        await releaseLock(dataSource, false);
+        throw e;
     } finally {
         // Disconnect from the network API
         if (api) {
@@ -204,7 +251,7 @@ export async function extractData(
     
     if (batchLog) {
         // Update the batch log with processed block count and last height
-        await (await initializeDataSource()).getRepository(BatchLog).update(batchLog.id, {
+        await dataSource.getRepository(BatchLog).update(batchLog.id, {
             endTime: new Date(),
             status: BatchStatus.SUCCESS,
             processed_block_count: processedCount,
@@ -212,6 +259,9 @@ export async function extractData(
                 blocksToProcess[blocksToProcess.length - 1].number : null
         });
     }
+
+    // Release lock
+    await releaseLock(dataSource);
 
     return {
         processedCount: processedCount,

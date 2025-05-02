@@ -1,5 +1,11 @@
 import { Entity, PrimaryGeneratedColumn, Column } from 'typeorm';
 
+export enum LockStatus {
+  UNLOCKED = 0,
+  LOCKED = 1,
+  FAILED = 2
+}
+
 export enum BatchStatus {
   FAILED = 0,
   SUCCESS = 1,
@@ -39,4 +45,13 @@ export class BatchLog {
 
   @Column({ type: 'int', nullable: true })
   last_processed_height: number | null;
+
+  @Column({ nullable: true })
+  lockKey?: string;
+
+  @Column({ type: 'timestamp', nullable: true })
+  lockTime?: Date;
+
+  @Column({ type: 'enum', enum: LockStatus, nullable: true })
+  lockStatus?: LockStatus;
 }
