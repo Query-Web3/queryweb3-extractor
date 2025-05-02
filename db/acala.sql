@@ -19,6 +19,9 @@ CREATE TABLE IF NOT EXISTS `acala_batchlog` (
   `type` enum('1','2') NOT NULL,
   `processed_block_count` int(11) NOT NULL DEFAULT 0,
   `last_processed_height` int(11) DEFAULT NULL,
+  `lock_key` varchar(191) DEFAULT NULL,
+  `lock_time` datetime(3) DEFAULT NULL,
+  `lock_status` smallint DEFAULT NULL,
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=1 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
