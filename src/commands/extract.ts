@@ -27,7 +27,10 @@ const EXTRACT_INTERVAL_MS = process.env.EXTRACT_INTERVAL_MS ? Number(process.env
  * 
  * @param batchLog - Optional object containing the batch log ID. Used to update the batch status.
  */
-export async function extractData(batchLog?: {id: number}, startBlock?: number, endBlock?: number) {
+export async function extractData(batchLog?: {id: number}, startBlock?: number, endBlock?: number): Promise<{
+    processedCount: number;
+    lastProcessedHeight: number | null;
+}> {
     // Generate a unique ID for the current data extraction batch
     const batchId = uuidv4();
     console.log(`Starting batch with ID: ${batchId}`);
@@ -52,6 +55,8 @@ export async function extractData(batchLog?: {id: number}, startBlock?: number, 
             console.error('Error getting highest block from DB:', e);
             dbHighest = 0;
         }
+
+
         
         // Get latest block from chain
         const provider = new WsProvider('wss://acala-rpc.aca-api.network');
@@ -166,13 +171,20 @@ export async function extractData(batchLog?: {id: number}, startBlock?: number, 
             });
         } else {
             console.log(`Skipping existing block ${header.number}`);
-            return; // No new blocks to process
+            return {
+                processedCount: 0,
+                lastProcessedHeight: null
+            }; // No new blocks to process
         }
     }
 
     // Process all blocks in the queue
+    let processedCount = 0;
+    const BATCH_SAVE_INTERVAL = 100; // 每处理100个区块保存一次
+    
     for (const block of blocksToProcess) {
         console.log(`Processing block ${block.number}`);
+        processedCount++;
         
         // Get the full block data
         const signedBlock = await api.rpc.chain.getBlock(block.hashObj);
@@ -271,12 +283,21 @@ export async function extractData(batchLog?: {id: number}, startBlock?: number, 
     await api!.disconnect();
     
     if (batchLog) {
-        // Update the batch log status to success and set the end time
+        // Update the batch log with processed block count and last height
         await (await initializeDataSource()).getRepository(BatchLog).update(batchLog.id, {
             endTime: new Date(),
-            status: BatchStatus.SUCCESS
+            status: BatchStatus.SUCCESS,
+            processed_block_count: processedCount,
+            last_processed_height: blocksToProcess.length > 0 ? 
+                blocksToProcess[blocksToProcess.length - 1].number : null
         });
     }
+
+    return {
+        processedCount: processedCount,
+        lastProcessedHeight: blocksToProcess.length > 0 ? 
+            blocksToProcess[blocksToProcess.length - 1].number : null
+    };
 }
 
 /**
@@ -299,7 +320,13 @@ export async function runExtract(options?: {startBlock?: number, endBlock?: numb
             });
             
             // Call the extractData function with the created batch log to start the data extraction process
-            await extractData(batchLog, startBlock, endBlock);
+            const result = await extractData(batchLog, startBlock, endBlock);
+            
+            // Update processed block count and last height after successful extraction
+            await (await initializeDataSource()).getRepository(BatchLog).update(batchLog.id, {
+                processed_block_count: result.processedCount,
+                last_processed_height: result.lastProcessedHeight
+            });
             
             // If processing historical blocks, exit after one run
             if (startBlock !== undefined && endBlock !== undefined) {

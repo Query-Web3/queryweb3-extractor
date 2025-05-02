@@ -17,6 +17,8 @@ CREATE TABLE IF NOT EXISTS `acala_batchlog` (
   `status` enum('0','1','2') NOT NULL DEFAULT '2',
   `retryCount` int(11) NOT NULL DEFAULT 0,
   `type` enum('1','2') NOT NULL,
+  `processed_block_count` int(11) NOT NULL DEFAULT 0,
+  `last_processed_height` int(11) DEFAULT NULL,
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=1 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -59,14 +61,6 @@ CREATE TABLE IF NOT EXISTS `acala_extrinsic` (
   PRIMARY KEY (`id`),
   KEY `acala_extrinsic_blockId_fkey` (`blockId`)
 ) ENGINE=InnoDB AUTO_INCREMENT=1 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-ALTER TABLE `acala_event`
-  ADD CONSTRAINT `acala_event_blockId_fkey` FOREIGN KEY (`blockId`) REFERENCES `acala_block` (`id`) ON UPDATE CASCADE,
-  ADD CONSTRAINT `acala_event_extrinsicId_fkey` FOREIGN KEY (`extrinsicId`) REFERENCES `acala_extrinsic` (`id`) ON DELETE SET NULL ON UPDATE CASCADE;
-
-ALTER TABLE `acala_extrinsic`
-  ADD CONSTRAINT `acala_extrinsic_blockId_fkey` FOREIGN KEY (`blockId`) REFERENCES `acala_block` (`id`) ON UPDATE CASCADE;
-COMMIT;
 
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
 /*!40101 SET CHARACTER_SET_RESULTS=@OLD_CHARACTER_SET_RESULTS */;
