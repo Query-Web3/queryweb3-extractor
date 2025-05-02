@@ -101,14 +101,14 @@ export async function extractData(batchLog?: {id: number}, startBlock?: number, 
             await api.isReady;
             console.log('API connection established successfully to:', provider.endpoint);
             break;
-        } catch (e) {
-            retries++;
-            console.error(`API connection attempt ${retries}/${maxRetries} failed:`, e);
-            if (retries >= maxRetries) {
-                throw new Error(`Failed to connect after ${maxRetries} attempts`);
+            } catch (e) {
+                console.error(`Error processing block ${block.number}:`, e);
+                throw e;
             }
-            await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5s before retry
-        }
+        }));
+        
+        // 显示当前批次完成
+        console.log(`Completed batch ${batchNum}/${totalBatches}`);
     }
 
     if (!api) {
@@ -178,18 +178,28 @@ export async function extractData(batchLog?: {id: number}, startBlock?: number, 
         }
     }
 
-    // Process all blocks in the queue
+    // 获取CPU核心数作为并行度
+    const os = require('os');
+    const CONCURRENCY = Math.max(1, os.cpus().length - 1); // 保留一个核心给系统
+    console.log(`Using ${CONCURRENCY} parallel workers`);
+
+    // Process blocks sequentially with progress display
     let processedCount = 0;
-    const BATCH_SAVE_INTERVAL = 100; // 每处理100个区块保存一次
+    const totalBlocks = blocksToProcess.length;
     
-    for (const block of blocksToProcess) {
-        console.log(`Processing block ${block.number}`);
+    for (let i = 0; i < totalBlocks; i++) {
+        const block = blocksToProcess[i];
+        const progress = Math.round(((i + 1) / totalBlocks) * 100);
+        console.log(`Processing block ${block.number} (${i + 1}/${totalBlocks}, ${progress}%)`);
         processedCount++;
         
-        // Get the full block data
-        const signedBlock = await api.rpc.chain.getBlock(block.hashObj);
-        // Get the system events for the current block
-        const events = await api.query.system.events.at(block.hashObj);
+        try {
+            if (!api) throw new Error('API not initialized');
+            
+            // Get the full block data
+            const signedBlock = await api.rpc.chain.getBlock(block.hashObj);
+            // Get the system events for the current block
+            const events = await api.query.system.events.at(block.hashObj);
     
     // Process each extrinsic in the block to extract relevant information
     const extrinsics = await Promise.all(signedBlock.block.extrinsics.map(async (ext: any, index: number) => {
