@@ -35,6 +35,7 @@ fi
 
 # Start services using PM2 ecosystem
 echo "Starting services using PM2 ecosystem..."
+mkdir -p logs
 pm2 start ecosystem.config.js
 
 echo "Services started successfully. Use following commands to manage:"
