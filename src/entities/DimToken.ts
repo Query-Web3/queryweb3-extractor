@@ -1,4 +1,4 @@
-import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, OneToMany } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, OneToMany, JoinColumn } from 'typeorm';
 import { DimChain } from './DimChain';
 import { DimAssetType } from './DimAssetType';
 import { FactTokenDailyStat } from './FactTokenDailyStat';
@@ -9,7 +9,7 @@ export class DimToken {
   @PrimaryGeneratedColumn()
   id: number;
 
-  @Column()
+  @Column({ name: 'chain_id' })
   chainId: number;
 
   @Column({ length: 42 })
@@ -24,10 +24,10 @@ export class DimToken {
   @Column()
   decimals: number;
 
-  @Column({ type: 'decimal', precision: 36, scale: 18, nullable: true })
+  @Column({ name: 'price_usd', type: 'decimal', precision: 36, scale: 18, nullable: true })
   priceUsd: number;
 
-  @Column()
+  @Column({ name: 'asset_type_id' })
   assetTypeId: number;
 
   @Column({ name: 'created_at', type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
@@ -37,9 +37,11 @@ export class DimToken {
   updatedAt: Date;
 
   @ManyToOne(() => DimChain, (chain) => chain.tokens)
+  @JoinColumn({ name: 'chain_id', referencedColumnName: 'chainId' })
   chain: DimChain;
 
   @ManyToOne(() => DimAssetType, (assetType) => assetType.tokens)
+  @JoinColumn({ name: 'asset_type_id', referencedColumnName: 'id' })
   assetType: DimAssetType;
 
   @OneToMany(() => FactTokenDailyStat, (dailyStat) => dailyStat.token)

@@ -9,7 +9,7 @@ export class DimChain {
   @Column({ length: 50 })
   name: string;
 
-  @Column()
+  @Column({ name: 'chain_id' })
   chainId: number;
 
   @Column({ name: 'created_at', type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
