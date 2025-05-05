@@ -79,9 +79,29 @@ export async function extractData(
         };
     }
     
-    let isHistorical = startBlock !== undefined && endBlock !== undefined;
+    let isHistorical = false;
     
-    if (!isHistorical) {
+    if (startBlock !== undefined || endBlock !== undefined) {
+        isHistorical = true;
+        
+        if (startBlock !== undefined && endBlock === undefined) {
+            // Only startBlock provided - process from startBlock to latest
+            const provider = new WsProvider('wss://acala-rpc.aca-api.network');
+            const api = await ApiPromise.create(options({ provider }));
+            const header = await api.rpc.chain.getHeader();
+            endBlock = header.number.toNumber();
+            await api.disconnect();
+            console.log(`Processing from block ${startBlock} to latest (${endBlock})`);
+        } else if (endBlock !== undefined && startBlock === undefined) {
+            // Only endBlock provided - process from 0 to endBlock
+            startBlock = 0;
+            console.log(`Processing from block 0 to ${endBlock}`);
+        } else if (startBlock !== undefined && endBlock !== undefined) {
+            // Both provided - process specified range
+            console.log(`Processing from block ${startBlock} to ${endBlock}`);
+        }
+    } else {
+        // No parameters - auto determine range from DB highest to chain latest
         let dbHighest = 0;
         try {
             const highestBlock = await dataSource.getRepository(Block)
