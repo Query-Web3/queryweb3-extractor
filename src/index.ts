@@ -1,9 +1,9 @@
 import dotenv from 'dotenv';
 dotenv.config();
 import { Command } from 'commander';
-import { runExtract } from './commands/extract';
+import { extractData } from './commands/extract';
 import { transformData } from './commands/transform';
-import { getBlockDetails } from './commands/block';
+import { getBlockDetails } from './commands/block/main';
 import { extractDataSource } from './datasources/extractDataSource';
 import { transformDataSource } from './datasources/transformDataSource';
 
@@ -20,10 +20,11 @@ program.command('extract')
     .option('-e, --end-block <number>', 'Ending block number', parseInt)
     .action(async (options) => {
         try {
-            await runExtract({
-                startBlock: options.startBlock,
-                endBlock: options.endBlock
-            });
+            // TODO: 需要提供有效的batchLog参数
+            await extractData({
+                id: 0,
+                batchId: 'cli-' + Date.now()
+            }, options.startBlock, options.endBlock);
         } finally {
             if (extractDataSource.isInitialized) {
                 await extractDataSource.destroy();
