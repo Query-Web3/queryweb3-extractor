@@ -3,6 +3,7 @@ import { DimChain } from '../entities/DimChain';
 import { DimAssetType } from '../entities/DimAssetType';
 import { DimReturnType } from '../entities/DimReturnType';
 import { DimToken } from '../entities/DimToken';
+import { DimStatCycle } from '../entities/DimStatCycle';
 import { FactTokenDailyStat } from '../entities/FactTokenDailyStat';
 import { FactYieldStat } from '../entities/FactYieldStat';
 import { BatchLog } from '../entities/BatchLog';
@@ -22,6 +23,7 @@ export const transformDataSource = new DataSource({
     DimAssetType,
     DimReturnType,
     DimToken,
+    DimStatCycle,
     FactTokenDailyStat,
     FactYieldStat,
     BatchLog,

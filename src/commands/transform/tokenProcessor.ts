@@ -2,6 +2,7 @@ import { DimToken } from '../../entities/DimToken';
 import { DimAssetType } from '../../entities/DimAssetType';
 import { DimChain } from '../../entities/DimChain';
 import { DimReturnType } from '../../entities/DimReturnType';
+import { DimStatCycle } from '../../entities/DimStatCycle';
 import { initializeDataSource } from './dataSource';
 
 export async function upsertToken(currencyId: any) {
@@ -116,6 +117,23 @@ export async function initializeDimensionTables() {
         let existing = await returnTypeRepo.findOne({ where: { name: type.name } });
         if (!existing) {
             await returnTypeRepo.save(type);
+        }
+    }
+
+    // Initialize stat cycles
+    const statCycleRepo = dataSource.getRepository(DimStatCycle);
+    const statCycles = [
+        { name: 'Daily', description: 'Daily statistics', days: 1 },
+        { name: 'Weekly', description: 'Weekly statistics', days: 7 },
+        { name: 'Monthly', description: 'Monthly statistics', days: 30 },
+        { name: 'Quarterly', description: 'Quarterly statistics', days: 90 },
+        { name: 'Yearly', description: 'Yearly statistics', days: 365 }
+    ];
+    
+    for (const cycle of statCycles) {
+        let existing = await statCycleRepo.findOne({ where: { name: cycle.name } });
+        if (!existing) {
+            await statCycleRepo.save(cycle);
         }
     }
 }
