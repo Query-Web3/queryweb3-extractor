@@ -1,31 +1,17 @@
 import { DataSource } from 'typeorm';
 import { Block } from '../../entities/Block';
-import { ApiPromise, WsProvider } from '@polkadot/api';
-import { options } from '@acala-network/api';
 import { initializeDataSource } from './dataSource';
+import { 
+    parseTimeRange,
+    createApi,
+    disconnectApi,
+    getLatestBlockNumber
+} from '../../utils/blockTime';
 
 export interface BlockRange {
     startBlock: number;
     endBlock: number;
     isHistorical: boolean;
-}
-
-function parseTimeRange(timeRange: string): number {
-    const match = timeRange.match(/^(\d+)([dwmMy])$/);
-    if (!match) {
-        throw new Error(`Invalid time range format: ${timeRange}. Expected format like 2d, 3w, 1m, 1y`);
-    }
-
-    const value = parseInt(match[1]);
-    const unit = match[2];
-    
-    switch (unit) {
-        case 'd': return value * 24 * 60 * 60 * 1000; // days to ms
-        case 'w': return value * 7 * 24 * 60 * 60 * 1000; // weeks to ms
-        case 'm': return value * 30 * 24 * 60 * 60 * 1000; // months to ms
-        case 'y': return value * 365 * 24 * 60 * 60 * 1000; // years to ms
-        default: throw new Error(`Unknown time unit: ${unit}`);
-    }
 }
 
 export async function determineBlockRange(
@@ -40,8 +26,7 @@ export async function determineBlockRange(
         const now = Date.now();
         const targetTime = now - timeMs;
         
-        const provider = new WsProvider('wss://acala-rpc.aca-api.network');
-        const api = await ApiPromise.create(options({ provider }));
+        const api = await createApi();
         
         // Get current block number and timestamp
         const header = await api.rpc.chain.getHeader();
@@ -57,7 +42,7 @@ export async function determineBlockRange(
         startBlock = Math.max(0, latestBlock - blocksDiff);
         endBlock = latestBlock;
         
-        await api.disconnect();
+        await disconnectApi(api);
         console.log(`Processing time range ${timeRange} (blocks ${startBlock} to ${endBlock})`);
         return {
             startBlock,
@@ -69,11 +54,9 @@ export async function determineBlockRange(
         
         if (startBlock !== undefined && endBlock === undefined) {
             // Only startBlock provided - process from startBlock to latest
-            const provider = new WsProvider('wss://acala-rpc.aca-api.network');
-            const api = await ApiPromise.create(options({ provider }));
-            const header = await api.rpc.chain.getHeader();
-            endBlock = header.number.toNumber();
-            await api.disconnect();
+        const api = await createApi();
+        endBlock = await getLatestBlockNumber(api);
+        await disconnectApi(api);
             console.log(`Processing from block ${startBlock} to latest (${endBlock})`);
         } else if (endBlock !== undefined && startBlock === undefined) {
             // Only endBlock provided - process from 0 to endBlock
@@ -98,11 +81,9 @@ export async function determineBlockRange(
             dbHighest = 0;
         }
 
-        const provider = new WsProvider('wss://acala-rpc.aca-api.network');
-        const api = await ApiPromise.create(options({ provider }));
-        const header = await api.rpc.chain.getHeader();
-        const chainLatest = header.number.toNumber();
-        await api.disconnect();
+        const api = await createApi();
+        const chainLatest = await getLatestBlockNumber(api);
+        await disconnectApi(api);
         
         startBlock = dbHighest > 0 ? dbHighest + 1 : 0;
         endBlock = chainLatest;
@@ -119,10 +100,8 @@ export async function determineBlockRange(
 }
 
 export async function getLatestBlock(): Promise<number> {
-    const provider = new WsProvider('wss://acala-rpc.aca-api.network');
-    const api = await ApiPromise.create(options({ provider }));
-    const header = await api.rpc.chain.getHeader();
-    const latest = header.number.toNumber();
-    await api.disconnect();
+    const api = await createApi();
+    const latest = await getLatestBlockNumber(api);
+    await disconnectApi(api);
     return latest;
 }

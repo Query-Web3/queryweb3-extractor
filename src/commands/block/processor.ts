@@ -1,22 +1,9 @@
 import { ApiPromise } from '@polkadot/api';
-
-function parseTimeRange(timeRange: string): number {
-    const match = timeRange.match(/^(\d+)([dwmMy])$/);
-    if (!match) {
-        throw new Error(`Invalid time range format: ${timeRange}. Expected format like 2d, 3w, 1m, 1y`);
-    }
-
-    const value = parseInt(match[1]);
-    const unit = match[2];
-    
-    switch (unit) {
-        case 'd': return value * 24 * 60 * 60 * 1000; // days to ms
-        case 'w': return value * 7 * 24 * 60 * 60 * 1000; // weeks to ms
-        case 'm': return value * 30 * 24 * 60 * 60 * 1000; // months to ms
-        case 'y': return value * 365 * 24 * 60 * 60 * 1000; // years to ms
-        default: throw new Error(`Unknown time unit: ${unit}`);
-    }
-}
+import { 
+    parseTimeRange,
+    getLatestBlockNumber,
+    getBlockTimestamp
+} from '../../utils/blockTime';
 
 export async function processBlockRange(api: ApiPromise, timeRange: string) {
     const timeMs = parseTimeRange(timeRange);
@@ -24,9 +11,8 @@ export async function processBlockRange(api: ApiPromise, timeRange: string) {
     const targetTime = now - timeMs;
     
     // Get current block number and timestamp
-    const header = await api.rpc.chain.getHeader();
-    const latestBlock = header.number.toNumber();
-    const latestTimestamp = parseInt((await api.query.timestamp.now()).toString());
+    const latestBlock = await getLatestBlockNumber(api);
+    const latestTimestamp = await getBlockTimestamp(api, await api.rpc.chain.getBlockHash(latestBlock));
     
     // Use binary search to find the exact block matching target time
     let low = 0;
@@ -36,7 +22,7 @@ export async function processBlockRange(api: ApiPromise, timeRange: string) {
     while (low <= high) {
         const mid = Math.floor((low + high) / 2);
         const hash = await api.rpc.chain.getBlockHash(mid);
-        const timestamp = parseInt((await api.query.timestamp.now.at(hash)).toString());
+        const timestamp = await getBlockTimestamp(api, hash);
         
         if (timestamp >= targetTime) {
             startBlock = mid;
