@@ -5,10 +5,15 @@ export async function getBlockDetails(timeRange?: string) {
   const api = await createApi();
   try {
     if (timeRange) {
-      return await processBlockRange(api, timeRange);
+      const result = await processBlockRange(api, timeRange);
+      await disconnectApi(api);
+      return result;
     }
-    return await processBlock(api);
-  } finally {
+    const result = await processBlock(api);
     await disconnectApi(api);
+    return result;
+  } catch (err) {
+    await disconnectApi(api);
+    throw err;
   }
 }

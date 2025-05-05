@@ -48,34 +48,33 @@ program.command('transform')
 program.command('block')
     .description('Show current blockchain details')
     .option('-t, --time-range <string>', 'Time range (e.g. 2d, 3w, 1m, 1y)')
-    .action(async (options) => {
-        try {
-            await extractDataSource.initialize();
-            const details = await getBlockDetails(options.timeRange);
-            console.log('Blockchain Details:');
-            
-            if ('firstBlock' in details) {
-                // Time range query results
-                console.log('Block Range Query Results:');
-                console.log(`Time Range: ${details.timeRange}`);
-                console.log(`First Block: ${details.firstBlock.number}`);
-                console.log(`Latest Block: ${details.latestBlock}`);
-                console.log(`Block Difference: ${details.blockDiff}`);
-                console.log(`First Block Timestamp: ${details.firstBlock.timestamp}`);
-            } else {
-                // Single block query results
-                console.log('Current Block:', details.currentBlock);
-                console.log('Chain Stats:', details.chainStats);
+    .action((options) => {
+        (async () => {
+            try {
+                await extractDataSource.initialize();
+                const details = await getBlockDetails(options.timeRange);
+                console.log('Blockchain Details:');
+                
+                if ('firstBlock' in details) {
+                    console.log('Block Range Query Results:');
+                    console.log(`Time Range: ${details.timeRange}`);
+                    console.log(`First Block: ${details.firstBlock.number}`);
+                    console.log(`Latest Block: ${details.latestBlock}`);
+                    console.log(`Block Difference: ${details.blockDiff}`);
+                    console.log(`First Block Timestamp: ${details.firstBlock.timestamp}`);
+                } else {
+                    console.log('Current Block:', details.currentBlock);
+                    console.log('Chain Stats:', details.chainStats);
+                }
+            } catch (err) {
+                console.error('Error getting block details:', err);
+            } finally {
+                if (extractDataSource.isInitialized) {
+                    await extractDataSource.destroy();
+                }
+                process.exit(0);
             }
-            process.exit(0);
-        } catch (err) {
-            console.error('Error getting block details:', err);
-            process.exit(1);
-        } finally {
-            if (extractDataSource.isInitialized) {
-                await extractDataSource.destroy();
-            }
-        }
+        })();
     });
 
 program.parseAsync(process.argv).catch(async (err: Error) => {
