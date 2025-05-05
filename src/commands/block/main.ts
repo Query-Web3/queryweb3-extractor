@@ -1,4 +1,4 @@
-import { createApi, disconnectApi } from './apiConnector';
+import { createApi, disconnectApi } from '../common/apiConnector';
 import { processBlock, processBlockRange } from './processor';
 
 export async function getBlockDetails(timeRange?: string) {

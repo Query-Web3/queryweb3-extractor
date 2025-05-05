@@ -6,7 +6,7 @@ import { initializeDataSource } from './dataSource';
 import { getConcurrencySettings, splitIntoChunks, processChunk } from './parallelManager';
 import { checkAndAcquireLock, releaseLock } from './lockManager';
 import { determineBlockRange } from './blockRange';
-import { createApiConnection } from './apiConnector';
+import { createApiConnection } from '../common/apiConnector';
 
 export interface ProcessResult {
     processedCount: number;

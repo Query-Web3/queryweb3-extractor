@@ -44,6 +44,15 @@ export async function createApiConnection(maxRetries: number = 3): Promise<ApiPr
     throw new Error('API connection could not be established');
 }
 
+// 简化版本，兼容block命令的需求
+export async function createApi(): Promise<ApiPromise> {
+    return createApiConnection(1);
+}
+
+export async function disconnectApi(api: ApiPromise): Promise<void> {
+    await api.disconnect();
+}
+
 export async function getBlockHeader(api: ApiPromise, blockNumber: number) {
     const blockHash = await api.rpc.chain.getBlockHash(blockNumber);
     return api.rpc.chain.getHeader(blockHash);
