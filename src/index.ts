@@ -6,6 +6,7 @@ import { transformData } from './commands/transform';
 import { getBlockDetails } from './commands/block/main';
 import { extractDataSource } from './datasources/extractDataSource';
 import { transformDataSource } from './datasources/transformDataSource';
+import { BatchLog, BatchType, BatchStatus } from './entities/BatchLog';
 
 const program = new Command();
 
@@ -19,9 +20,41 @@ program.command('extract')
     .option('-s, --start-block <number>', 'Starting block number', parseInt)
     .option('-e, --end-block <number>', 'Ending block number', parseInt)
     .option('-t, --time-range <string>', 'Time range (e.g. 2d, 3w, 1m, 1y)')
+    .option('-b, --batchlog', 'Show last extract batchlog record')
     .action(async (options) => {
         try {
-            // TODO: 需要提供有效的batchLog参数
+            if (options.batchlog) {
+                try {
+                    if (!extractDataSource.isInitialized) {
+                        await extractDataSource.initialize();
+                    }
+                    const batchLogRepo = extractDataSource.getRepository(BatchLog);
+                    const lastLog = await batchLogRepo.findOne({
+                        where: { type: BatchType.EXTRACT },
+                        order: { startTime: 'DESC' }
+                    });
+
+                    if (lastLog) {
+                        console.log('Last Extract BatchLog Record:');
+                        console.log(`ID: ${lastLog.id}`);
+                        console.log(`Batch ID: ${lastLog.batchId}`);
+                        console.log(`Start Time: ${lastLog.startTime}`);
+                        console.log(`End Time: ${lastLog.endTime || 'N/A'}`);
+                        console.log(`Status: ${BatchStatus[lastLog.status]}`);
+                        console.log(`Type: ${BatchType[lastLog.type]}`);
+                        console.log(`Processed Blocks: ${lastLog.processed_block_count}`);
+                        console.log(`Last Processed Height: ${lastLog.last_processed_height || 'N/A'}`);
+                    } else {
+                        console.log('No extract batchlog records found');
+                    }
+                } catch (err) {
+                    console.error('Error fetching batchlog:', err);
+                } finally {
+                    process.exit(0);
+                }
+                return;
+            }
+
             await extractData({
                 id: 0,
                 batchId: 'cli-' + Date.now()
