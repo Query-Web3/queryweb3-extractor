@@ -1,4 +1,4 @@
-export { extractData, showLastBatchLog, pauseBatch, resumeBatch } from './main';
+export { extractData, showLastExtractBatchLog as showLastBatchLog, pauseExtractBatch as pauseBatch, resumeExtractBatch as resumeBatch } from './main';
 export { processBlocks } from './processor';
 export { checkAndAcquireLock, releaseLock } from './lockManager';
 export { determineBlockRange, getLatestBlock } from './blockRange';
