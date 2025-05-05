@@ -21,6 +21,7 @@ program.command('extract')
     .option('-e, --end-block <number>', 'Ending block number', parseInt)
     .option('-t, --time-range <string>', 'Time range (e.g. 2d, 3w, 1m, 1y)')
     .option('-b, --batchlog', 'Show last extract batchlog record')
+    .option('-r, --resume', 'Resume non-SUCCESS extract batch')
     .action(async (options) => {
         try {
             if (options.batchlog) {
@@ -51,6 +52,35 @@ program.command('extract')
                     console.error('Error fetching batchlog:', err);
                 } finally {
                     process.exit(0);
+                }
+                return;
+            }
+
+            if (options.resume) {
+                try {
+                    if (!extractDataSource.isInitialized) {
+                        await extractDataSource.initialize();
+                    }
+                    const batchLogRepo = extractDataSource.getRepository(BatchLog);
+                    const unfinishedLog = await batchLogRepo.findOne({
+                        where: { 
+                            type: BatchType.EXTRACT,
+                            status: BatchStatus.RUNNING 
+                        },
+                        order: { startTime: 'DESC' }
+                    });
+
+                    if (!unfinishedLog) {
+                        console.log('No running extract batch found');
+                        process.exit(0);
+                        return;
+                    }
+
+                    console.log(`Resuming extract batch ${unfinishedLog.batchId}`);
+                    await extractData(unfinishedLog, options.startBlock, options.endBlock);
+                } catch (err) {
+                    console.error('Error resuming batch:', err);
+                    process.exit(1);
                 }
                 return;
             }
