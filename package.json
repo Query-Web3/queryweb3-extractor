@@ -4,7 +4,7 @@
   "description": "从Acala网络获取链数据并存入MySQL数据库",
   "main": "dist/index.min.js",
   "scripts": {
-    "build": "tsc && esbuild dist/*.js --bundle --platform=node --outfile=dist/index.min.js --minify",
+    "build": "rm -rf dist/* && tsc && esbuild dist/*.js --bundle --platform=node --outfile=dist/index.min.js --minify",
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
     "start": "node dist/index.min.js"
   },
