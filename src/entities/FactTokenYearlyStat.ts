@@ -1,8 +1,8 @@
 import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn } from 'typeorm';
 import { DimToken } from './DimToken';
 
-@Entity({ name: 'fact_token_daily_stats' })
-export class FactTokenDailyStat {
+@Entity({ name: 'fact_token_yearly_stats' })
+export class FactTokenYearlyStat {
   @PrimaryGeneratedColumn({ type: 'bigint' })
   id: number;
 
@@ -39,7 +39,7 @@ export class FactTokenDailyStat {
   @Column({ name: 'created_at', type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
   createdAt: Date;
 
-  @ManyToOne(() => DimToken, (token) => token.dailyStats)
+  @ManyToOne(() => DimToken, (token) => token.yearlyStats)
   @JoinColumn({ name: 'token_id' })
   token: DimToken;
 }
