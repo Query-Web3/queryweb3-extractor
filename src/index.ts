@@ -1,12 +1,11 @@
 import dotenv from 'dotenv';
 dotenv.config();
 import { Command } from 'commander';
-import { extractData } from './commands/extract';
+import { extractData, showLastBatchLog, pauseBatch, resumeBatch } from './commands/extract';
 import { transformData } from './commands/transform';
 import { getBlockDetails } from './commands/block/main';
 import { extractDataSource } from './datasources/extractDataSource';
 import { transformDataSource } from './datasources/transformDataSource';
-import { BatchLog, BatchType, BatchStatus } from './entities/BatchLog';
 
 const program = new Command();
 
@@ -22,64 +21,50 @@ program.command('extract')
     .option('-t, --time-range <string>', 'Time range (e.g. 2d, 3w, 1m, 1y)')
     .option('-b, --batchlog', 'Show last extract batchlog record')
     .option('-r, --resume', 'Resume non-SUCCESS extract batch')
+    .option('-p, --pause <batchlogId>', 'Pause running batch by ID', parseInt)
     .action(async (options) => {
         try {
             if (options.batchlog) {
                 try {
-                    if (!extractDataSource.isInitialized) {
-                        await extractDataSource.initialize();
-                    }
-                    const batchLogRepo = extractDataSource.getRepository(BatchLog);
-                    const lastLog = await batchLogRepo.findOne({
-                        where: { type: BatchType.EXTRACT },
-                        order: { startTime: 'DESC' }
-                    });
-
-                    if (lastLog) {
-                        console.log('Last Extract BatchLog Record:');
-                        console.log(`ID: ${lastLog.id}`);
-                        console.log(`Batch ID: ${lastLog.batchId}`);
-                        console.log(`Start Time: ${lastLog.startTime}`);
-                        console.log(`End Time: ${lastLog.endTime || 'N/A'}`);
-                        console.log(`Status: ${BatchStatus[lastLog.status]}`);
-                        console.log(`Type: ${BatchType[lastLog.type]}`);
-                        console.log(`Processed Blocks: ${lastLog.processed_block_count}`);
-                        console.log(`Last Processed Height: ${lastLog.last_processed_height || 'N/A'}`);
+                    await showLastBatchLog();
+                } catch (err: unknown) {
+                    if (err instanceof Error) {
+                        console.error('Error fetching batchlog:', err.message);
                     } else {
-                        console.log('No extract batchlog records found');
+                        console.error('Unknown error fetching batchlog');
                     }
-                } catch (err) {
-                    console.error('Error fetching batchlog:', err);
                 } finally {
                     process.exit(0);
                 }
                 return;
             }
 
+            if (options.pause) {
+                try {
+                    const batchLog = await pauseBatch(options.pause);
+                    console.log(`Batch ${batchLog.batchId} (ID: ${batchLog.id}) paused successfully`);
+                } catch (err: unknown) {
+                    if (err instanceof Error) {
+                        console.error('Error pausing batch:', err.message);
+                    } else {
+                        console.error('Unknown error pausing batch');
+                    }
+                    process.exit(1);
+                }
+                return;
+            }
+
             if (options.resume) {
                 try {
-                    if (!extractDataSource.isInitialized) {
-                        await extractDataSource.initialize();
-                    }
-                    const batchLogRepo = extractDataSource.getRepository(BatchLog);
-                    const unfinishedLog = await batchLogRepo.findOne({
-                        where: { 
-                            type: BatchType.EXTRACT,
-                            status: BatchStatus.RUNNING 
-                        },
-                        order: { startTime: 'DESC' }
-                    });
-
-                    if (!unfinishedLog) {
-                        console.log('No running extract batch found');
-                        process.exit(0);
-                        return;
-                    }
-
+                    const unfinishedLog = await resumeBatch();
                     console.log(`Resuming extract batch ${unfinishedLog.batchId}`);
                     await extractData(unfinishedLog, options.startBlock, options.endBlock);
-                } catch (err) {
-                    console.error('Error resuming batch:', err);
+                } catch (err: unknown) {
+                    if (err instanceof Error) {
+                        console.error('Error resuming batch:', err.message);
+                    } else {
+                        console.error('Unknown error resuming batch');
+                    }
                     process.exit(1);
                 }
                 return;

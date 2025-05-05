@@ -9,7 +9,14 @@ export enum LockStatus {
 export enum BatchStatus {
   FAILED = 0,
   SUCCESS = 1,
-  RUNNING = 2
+  RUNNING = 2,
+  STOPPED = 3,
+  PAUSED = 4,
+  RESUMED = 5,
+  CANCELED = 6,
+  COMPLETED = 7,
+  SKIPPED = 8,
+  RETRYING = 9
 }
 
 export enum BatchType {
