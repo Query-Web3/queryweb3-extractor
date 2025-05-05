@@ -80,14 +80,16 @@ export async function processBlock(
                 fee = '0';
             }
             
-            return {
-                index: index,
-                method: ext.method.toString(),
-                signer: ext.signer ? ext.signer.toString() : null,
-                fee,
-                status: 'pending',
-                params: ext.method.toHuman()
-            };
+                const methodSection = ext.method.section;
+                const methodName = ext.method.method;
+                return {
+                    index: index,
+                    method: `${methodSection}.${methodName}`,
+                    signer: ext.signer ? ext.signer.toString() : null,
+                    fee,
+                    status: 'pending',
+                    params: ext.method.toHuman()
+                };
         }));
 
         // Use transaction to save block data

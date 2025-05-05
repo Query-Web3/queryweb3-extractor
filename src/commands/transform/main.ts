@@ -88,21 +88,26 @@ export async function transformData(batchLog?: BatchLog) {
         }
 
         // Process events
-        const eventsToProcess = [
-            'Tokens.Transfer',
-            'Dex.Swap',
-            'Homa.Minted',
-            'Homa.Redeemed',
-            'Rewards.Reward'
+        // More flexible event matching with case-insensitive search
+        const eventPatterns = [
+            { section: 'tokens', method: 'transfer' },
+            { section: 'dex', method: 'swap' },
+            { section: 'homa', method: 'minted' },
+            { section: 'homa', method: 'redeemed' },
+            { section: 'rewards', method: 'reward' }
         ];
 
-        for (const eventType of eventsToProcess) {
-            const [section, method] = eventType.split('.');
+        for (const pattern of eventPatterns) {
+            console.log(`Querying events matching ${pattern.section}.${pattern.method}...`);
             const events = await dataSource.getRepository(Event)
                 .createQueryBuilder('event')
-                .where('event.section = :section AND event.method = :method', { section, method })
+                .where('LOWER(event.section) = LOWER(:section) AND LOWER(event.method) = LOWER(:method)', {
+                    section: pattern.section,
+                    method: pattern.method
+                })
                 .groupBy('event.data')
                 .getMany();
+            console.log(`Found ${events.length} events matching ${pattern.section}.${pattern.method}`);
 
             for (const event of events) {
                 try {
@@ -111,7 +116,7 @@ export async function transformData(batchLog?: BatchLog) {
                         await upsertToken(data.currencyId);
                     }
                 } catch (e) {
-                    console.error(`Failed to process ${eventType} event:`, event, e);
+                    console.error(`Failed to process ${pattern.section}.${pattern.method} event:`, event, e);
                 }
             }
         }
