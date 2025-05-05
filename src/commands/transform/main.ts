@@ -25,17 +25,27 @@ export async function transformData(batchLog?: BatchLog) {
             await dataSource.initialize();
         }
         console.log('Database connection established');
+
+        // Start a transaction to ensure data consistency
+        const queryRunner = dataSource.createQueryRunner();
+        await queryRunner.connect();
+        await queryRunner.startTransaction();
+        
+        try {
         
         // Process blocks first to ensure we have the chain data
         const blockRepo = dataSource.getRepository(Block);
+        console.log('Querying latest block...');
         const latestBlock = await blockRepo.findOne({ 
-            order: { number: 'DESC' },
-            where: { batchId: batchLog?.batchId }
+            where: {},
+            order: { number: 'DESC' }
         });
-
+        
         if (!latestBlock) {
-            throw new Error('No blocks found for this batch');
+            throw new Error('No blocks found in acala_block table');
         }
+        
+        console.log(`Processing latest block #${latestBlock.number} (batchId: ${latestBlock.batchId})`);
 
         // Define the extrinsic methods to be processed
         const methodsToProcess = [
@@ -111,9 +121,20 @@ export async function transformData(batchLog?: BatchLog) {
         
         // Process statistics
         await processTokenDailyStats();
-        await processYieldStats();
-        
-        console.log('Data transformation completed');
+            await processYieldStats();
+            
+            // Commit transaction
+            await queryRunner.commitTransaction();
+            console.log('Data transformation completed and committed');
+        } catch (e) {
+            // Rollback transaction on error
+            await queryRunner.rollbackTransaction();
+            console.error('Transaction rolled back due to error:', e);
+            throw e;
+        } finally {
+            // Release query runner
+            await queryRunner.release();
+        }
     } catch (e) {
         console.error('Transform failed:', e);
         

@@ -35,6 +35,8 @@ export async function processTokenDailyStats() {
     lastYear.setFullYear(lastYear.getFullYear() - 1);
 
     for (const token of tokens) {
+        console.log(`Processing stats for token ${token.symbol} (${token.address})`);
+        
         // Get all relevant events for this token
         const events = await eventRepo.find({
             where: [
@@ -48,6 +50,8 @@ export async function processTokenDailyStats() {
         });
 
         // Calculate daily volume and txns
+        console.log(`Found ${events.length} relevant events for token ${token.symbol}`);
+        
         const dailyVolume = events.reduce((sum, event) => {
             let amount = 0;
             if (event.section === 'Dex' && event.method === 'Swap') {
@@ -101,8 +105,10 @@ export async function processTokenDailyStats() {
         };
 
         if (!existingStat) {
+            console.log(`Inserting new stat record for ${token.symbol}:`, statData);
             await statRepo.insert(statData);
         } else {
+            console.log(`Updating existing stat record for ${token.symbol}:`, statData);
             await statRepo.update(existingStat.id, statData);
         }
     }

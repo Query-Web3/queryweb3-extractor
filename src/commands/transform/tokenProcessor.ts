@@ -54,13 +54,14 @@ export async function upsertToken(currencyId: any) {
     }
 
     // Get or create token
-    let token = await tokenRepo.findOne({ 
-        where: { 
-            chain: { id: 1 },
+    let token = await tokenRepo.findOne({
+        where: {
+            chainId: 1,
             address: currencyIdStr
-        },
-        relations: ['chain']
+        }
     });
+
+    console.log(`Processing token ${currencyIdStr}, found existing: ${!!token}`);
     
     if (!token) {
         token = await tokenRepo.save({
@@ -73,6 +74,11 @@ export async function upsertToken(currencyId: any) {
         });
     }
     
+    if (token) {
+        console.log(`Token ${token.symbol} (${token.address}) processed`);
+    } else {
+        console.error(`Failed to process token ${currencyIdStr}`);
+    }
     return token;
 }
 
