@@ -28,35 +28,36 @@ export async function processBlockRange(api: ApiPromise, timeRange: string) {
     const latestBlock = header.number.toNumber();
     const latestTimestamp = parseInt((await api.query.timestamp.now()).toString());
     
-    // Estimate block time (ms per block)
-    const blockTime = 12000; // Acala has ~12s block time
+    // Estimate block time (ms per block) - Acala has ~12s target block time
+    // Using 12.5s to account for slight variations
+    const blockTime = 12500;
     
     // Calculate approximate block number at target time
     const timeDiff = latestTimestamp - targetTime;
     const blocksDiff = Math.floor(timeDiff / blockTime);
     const startBlock = Math.max(0, latestBlock - blocksDiff);
     
-    // Process each block in range
-    const results = [];
-    for (let blockNum = startBlock; blockNum <= latestBlock; blockNum++) {
-        const hash = await api.rpc.chain.getBlockHash(blockNum);
+    // Get the first block in time range
+    try {
+        const hash = await api.rpc.chain.getBlockHash(startBlock);
         const header = await api.rpc.chain.getHeader(hash);
         const timestamp = await api.query.timestamp.now.at(hash);
         
-        results.push({
-            number: blockNum,
-            hash: hash.toString(),
-            timestamp: new Date(Number(timestamp.toString())).toISOString(),
-            parentHash: header.parentHash.toString()
-        });
+        return {
+            timeRange: timeRange,
+            firstBlock: {
+                number: startBlock,
+                hash: hash.toString(),
+                timestamp: new Date(Number(timestamp.toString())).toISOString(),
+                parentHash: header.parentHash.toString()
+            },
+            latestBlock: latestBlock,
+            blockDiff: latestBlock - startBlock
+        };
+    } catch (err) {
+        console.error(`Error processing first block ${startBlock}:`, err);
+        throw err;
     }
-    
-    return {
-        blocks: results,
-        timeRange: timeRange,
-        fromBlock: startBlock,
-        toBlock: latestBlock
-    };
 }
 
 export async function processBlock(api: ApiPromise) {

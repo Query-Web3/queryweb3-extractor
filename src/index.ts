@@ -54,15 +54,14 @@ program.command('block')
             const details = await getBlockDetails(options.timeRange);
             console.log('Blockchain Details:');
             
-            if ('blocks' in details) {
+            if ('firstBlock' in details) {
                 // Time range query results
-                console.log(`Blocks in time range ${details.timeRange} (${details.fromBlock} to ${details.toBlock}):`);
-                details.blocks.forEach(block => {
-                    console.log(`- Block #${block.number}:`);
-                    console.log(`  Hash: ${block.hash}`);
-                    console.log(`  Timestamp: ${block.timestamp}`);
-                    console.log(`  Parent Hash: ${block.parentHash}`);
-                });
+                console.log('Block Range Query Results:');
+                console.log(`Time Range: ${details.timeRange}`);
+                console.log(`First Block: ${details.firstBlock.number}`);
+                console.log(`Latest Block: ${details.latestBlock}`);
+                console.log(`Block Difference: ${details.blockDiff}`);
+                console.log(`First Block Timestamp: ${details.firstBlock.timestamp}`);
             } else {
                 // Single block query results
                 console.log('Current Block:', details.currentBlock);
