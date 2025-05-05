@@ -15,7 +15,16 @@ export async function transformData(batchLog?: BatchLog) {
     console.log('Starting data transformation from Acala to DIM tables...');
     
     try {
+        console.log('Initializing data source...');
         const dataSource = await initializeDataSource();
+        console.log('Data source initialized successfully');
+        
+        // Verify database connection
+        if (!dataSource.isInitialized) {
+            console.log('Initializing database connection...');
+            await dataSource.initialize();
+        }
+        console.log('Database connection established');
         
         // Process blocks first to ensure we have the chain data
         const blockRepo = dataSource.getRepository(Block);
@@ -107,6 +116,14 @@ export async function transformData(batchLog?: BatchLog) {
         console.log('Data transformation completed');
     } catch (e) {
         console.error('Transform failed:', e);
+        
+        // Log full error details for debugging
+        if (e instanceof Error) {
+            console.error('Error stack:', e.stack);
+        } else {
+            console.error('Full error object:', JSON.stringify(e, null, 2));
+        }
+        
         throw e;
     }
 }
