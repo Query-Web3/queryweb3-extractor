@@ -291,10 +291,25 @@ When running the extract command, you can specify:
 - `-s|--startBlock`: Starting block number (inclusive)
 - `-e|--endBlock`: Ending block number (inclusive)
 
-Example:
+Parameter combinations:
+1. Both `-s` and `-e` specified: Process blocks in specified range
+2. Only `-s` specified: Process from startBlock to latest block
+3. Only `-e` specified: Process from block 0 to endBlock
+4. No parameters: Auto-detect range from database highest block+1 to latest block
+
+Examples:
 ```bash
 # Extract blocks 1000000 to 1000100
 npm run extract -- --startBlock=1000000 --endBlock=1000100
+
+# Extract from block 1000000 to latest
+npm run extract -- --startBlock=1000000
+
+# Extract from block 0 to 1000100
+npm run extract -- --endBlock=1000100
+
+# Auto-detect range (from DB highest+1 to latest)
+npm run extract
 ```
 
 Note: When extracting historical data, the process will:
