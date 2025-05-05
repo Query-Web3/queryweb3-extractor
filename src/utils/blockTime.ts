@@ -3,15 +3,16 @@ import { options } from '@acala-network/api';
 import type { BlockHash } from '@polkadot/types/interfaces';
 
 export function parseTimeRange(timeRange: string): number {
-    const match = timeRange.match(/^(\d+)([dwmMy])$/);
+    const match = timeRange.match(/^(\d+)([hdwmMy])$/);
     if (!match) {
-        throw new Error(`Invalid time range format: ${timeRange}. Expected format like 2d, 3w, 1m, 1y`);
+        throw new Error(`Invalid time range format: ${timeRange}. Expected format like 2h, 3d, 1w, 1m, 1y`);
     }
 
     const value = parseInt(match[1]);
     const unit = match[2];
     
     switch (unit) {
+        case 'h': return value * 60 * 60 * 1000; // hours to ms
         case 'd': return value * 24 * 60 * 60 * 1000; // days to ms
         case 'w': return value * 7 * 24 * 60 * 60 * 1000; // weeks to ms
         case 'm': return value * 30 * 24 * 60 * 60 * 1000; // months to ms

@@ -18,7 +18,7 @@ program.command('extract')
     .description('Extract raw data from Acala blockchain')
     .option('-s, --start-block <number>', 'Starting block number', parseInt)
     .option('-e, --end-block <number>', 'Ending block number', parseInt)
-    .option('-t, --time-range <string>', 'Time range (e.g. 2d, 3w, 1m, 1y)')
+    .option('-t, --time-range <string>', 'Time range (e.g. 2h, 3d, 1w, 1m, 1y)')
     .option('-b, --batchlog', 'Show last extract batchlog record')
     .option('-r, --resume', 'Resume non-SUCCESS extract batch')
     .option('-p, --pause <batchlogId>', 'Pause running batch by ID', parseInt)
@@ -144,7 +144,7 @@ program.command('transform')
 
 program.command('block')
     .description('Show current blockchain details')
-    .option('-t, --time-range <string>', 'Time range (e.g. 2d, 3w, 1m, 1y)')
+    .option('-t, --time-range <string>', 'Time range (e.g. 2h, 3d, 1w, 1m, 1y)')
     .action((options) => {
         (async () => {
             try {
