@@ -28,14 +28,23 @@ export async function processBlockRange(api: ApiPromise, timeRange: string) {
     const latestBlock = header.number.toNumber();
     const latestTimestamp = parseInt((await api.query.timestamp.now()).toString());
     
-    // Estimate block time (ms per block) - Acala has ~12s target block time
-    // Using 12.5s to account for slight variations
-    const blockTime = 12500;
+    // Use binary search to find the exact block matching target time
+    let low = 0;
+    let high = latestBlock;
+    let startBlock = latestBlock;
     
-    // Calculate approximate block number at target time
-    const timeDiff = latestTimestamp - targetTime;
-    const blocksDiff = Math.floor(timeDiff / blockTime);
-    const startBlock = Math.max(0, latestBlock - blocksDiff);
+    while (low <= high) {
+        const mid = Math.floor((low + high) / 2);
+        const hash = await api.rpc.chain.getBlockHash(mid);
+        const timestamp = parseInt((await api.query.timestamp.now.at(hash)).toString());
+        
+        if (timestamp >= targetTime) {
+            startBlock = mid;
+            high = mid - 1;
+        } else {
+            low = mid + 1;
+        }
+    }
     
     // Get the first block in time range
     try {
