@@ -70,7 +70,18 @@ export async function upsertToken(currencyId: any) {
             symbol: symbol.slice(0, 20),
             name: name.slice(0, 100),
             decimals: decimals,
-            assetTypeId: assetType!.id
+            assetTypeId: assetType!.id,
+            createdAt: new Date(),
+            updatedAt: new Date()
+        });
+    } else {
+        // Update existing token if needed
+        await tokenRepo.update(token.id, {
+            symbol: symbol.slice(0, 20),
+            name: name.slice(0, 100),
+            decimals: decimals,
+            assetTypeId: assetType!.id,
+            updatedAt: new Date()
         });
     }
     

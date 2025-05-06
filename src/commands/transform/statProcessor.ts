@@ -1,4 +1,7 @@
 import { FactTokenDailyStat } from '../../entities/FactTokenDailyStat';
+import { FactTokenWeeklyStat } from '../../entities/FactTokenWeeklyStat';
+import { FactTokenMonthlyStat } from '../../entities/FactTokenMonthlyStat';
+import { FactTokenYearlyStat } from '../../entities/FactTokenYearlyStat';
 import { FactYieldStat } from '../../entities/FactYieldStat';
 import { DimToken } from '../../entities/DimToken';
 import { DimReturnType } from '../../entities/DimReturnType';
@@ -7,10 +10,13 @@ import { Event } from '../../entities/Event';
 import { initializeDataSource } from './dataSource';
 import { getTokenPriceFromOracle } from './utils';
 
-export async function processTokenDailyStats() {
+export async function processTokenStats() {
     const dataSource = await initializeDataSource();
     const tokenRepo = dataSource.getRepository(DimToken);
-    const statRepo = dataSource.getRepository(FactTokenDailyStat);
+    const dailyStatRepo = dataSource.getRepository(FactTokenDailyStat);
+    const weeklyStatRepo = dataSource.getRepository(FactTokenWeeklyStat);
+    const monthlyStatRepo = dataSource.getRepository(FactTokenMonthlyStat); 
+    const yearlyStatRepo = dataSource.getRepository(FactTokenYearlyStat);
     const eventRepo = dataSource.getRepository(Event);
     
     const tokens = await tokenRepo.find();
@@ -65,11 +71,11 @@ export async function processTokenDailyStats() {
         const dailyTxns = events.length;
 
         // Get previous stats for comparisons
-        const prevDayStat = await statRepo.findOne({ where: { tokenId: token.id, date: yesterday } });
-        const prevWeekStat = await statRepo.findOne({ where: { tokenId: token.id, date: lastWeek } });
-        const prevMonthStat = await statRepo.findOne({ where: { tokenId: token.id, date: lastMonth } });
-        const prevQuarterStat = await statRepo.findOne({ where: { tokenId: token.id, date: lastQuarter } });
-        const prevYearStat = await statRepo.findOne({ where: { tokenId: token.id, date: lastYear } });
+        const prevDayStat = await dailyStatRepo.findOne({ where: { tokenId: token.id, date: yesterday } });
+        const prevWeekStat = await weeklyStatRepo.findOne({ where: { tokenId: token.id, date: lastWeek } });
+        const prevMonthStat = await monthlyStatRepo.findOne({ where: { tokenId: token.id, date: lastMonth } });
+        const prevQuarterStat = await monthlyStatRepo.findOne({ where: { tokenId: token.id, date: lastQuarter } });
+        const prevYearStat = await yearlyStatRepo.findOne({ where: { tokenId: token.id, date: lastYear } });
 
         // Calculate YoY/QoQ changes
         const volumeYoY = prevYearStat ? 
@@ -80,7 +86,7 @@ export async function processTokenDailyStats() {
             ((dailyTxns - prevYearStat.txnsCount) / prevYearStat.txnsCount * 100) : 0;
 
         // Get or create today's stat
-        const existingStat = await statRepo.findOne({
+        const existingStat = await dailyStatRepo.findOne({
             where: { tokenId: token.id, date: today }
         });
 
@@ -106,10 +112,82 @@ export async function processTokenDailyStats() {
 
         if (!existingStat) {
             console.log(`Inserting new stat record for ${token.symbol}:`, statData);
-            await statRepo.insert(statData);
+            await dailyStatRepo.insert(statData);
         } else {
             console.log(`Updating existing stat record for ${token.symbol}:`, statData);
-            await statRepo.update(existingStat.id, statData);
+            await dailyStatRepo.update(existingStat.id, statData);
+        }
+
+        // Process weekly stats
+        const weeklyStat = {
+            tokenId: token.id,
+            date: today,
+            cycleId: weeklyCycle?.id,
+            volume: dailyVolume * 7, // Weekly volume estimate
+            volumeUsd: dailyVolume * tokenPrice * 7,
+            txnsCount: dailyTxns * 7,
+            priceUsd: tokenPrice,
+            volumeYoY,
+            volumeQoQ,
+            txnsYoY
+        };
+
+        const existingWeeklyStat = await weeklyStatRepo.findOne({
+            where: { tokenId: token.id, date: today }
+        });
+
+        if (!existingWeeklyStat) {
+            await weeklyStatRepo.insert(weeklyStat);
+        } else {
+            await weeklyStatRepo.update(existingWeeklyStat.id, weeklyStat);
+        }
+
+        // Process monthly stats
+        const monthlyStat = {
+            tokenId: token.id,
+            date: today,
+            cycleId: monthlyCycle?.id,
+            volume: dailyVolume * 30, // Monthly volume estimate
+            volumeUsd: dailyVolume * tokenPrice * 30,
+            txnsCount: dailyTxns * 30,
+            priceUsd: tokenPrice,
+            volumeYoY,
+            volumeQoQ,
+            txnsYoY
+        };
+
+        const existingMonthlyStat = await monthlyStatRepo.findOne({
+            where: { tokenId: token.id, date: today }
+        });
+
+        if (!existingMonthlyStat) {
+            await monthlyStatRepo.insert(monthlyStat);
+        } else {
+            await monthlyStatRepo.update(existingMonthlyStat.id, monthlyStat);
+        }
+
+        // Process yearly stats
+        const yearlyStat = {
+            tokenId: token.id,
+            date: today,
+            cycleId: yearlyCycle?.id,
+            volume: dailyVolume * 365, // Yearly volume estimate
+            volumeUsd: dailyVolume * tokenPrice * 365,
+            txnsCount: dailyTxns * 365,
+            priceUsd: tokenPrice,
+            volumeYoY,
+            volumeQoQ,
+            txnsYoY
+        };
+
+        const existingYearlyStat = await yearlyStatRepo.findOne({
+            where: { tokenId: token.id, date: today }
+        });
+
+        if (!existingYearlyStat) {
+            await yearlyStatRepo.insert(yearlyStat);
+        } else {
+            await yearlyStatRepo.update(existingYearlyStat.id, yearlyStat);
         }
     }
 }

@@ -5,7 +5,7 @@ import { Extrinsic } from '../../entities/Extrinsic';
 import { Event } from '../../entities/Event';
 import { initializeDataSource } from './dataSource';
 import { upsertToken, initializeDimensionTables } from './tokenProcessor';
-import { processTokenDailyStats, processYieldStats } from './statProcessor';
+import { processTokenStats, processYieldStats } from './statProcessor';
 import { v4 as uuidv4 } from 'uuid';
 
 export async function transformData(batchLog?: BatchLog) {
@@ -122,7 +122,7 @@ export async function transformData(batchLog?: BatchLog) {
             }
 
             await initializeDimensionTables();
-            await processTokenDailyStats();
+            await processTokenStats();
             await processYieldStats();
             
             await queryRunner.commitTransaction();
