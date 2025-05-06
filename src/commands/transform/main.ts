@@ -5,7 +5,8 @@ import { Extrinsic } from '../../entities/Extrinsic';
 import { Event } from '../../entities/Event';
 import { initializeDataSource } from './dataSource';
 import { upsertToken, initializeDimensionTables } from './tokenProcessor';
-import { processTokenStats, processYieldStats } from './statProcessor';
+import { processTokenStats } from './tokenStatsProcessor';
+import { processYieldStats } from './yieldStatsProcessor';
 import { v4 as uuidv4 } from 'uuid';
 
 export async function transformData(batchLog?: BatchLog) {
