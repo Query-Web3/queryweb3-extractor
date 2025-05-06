@@ -4,11 +4,18 @@ import { DimChain } from '../../entities/DimChain';
 import { DimReturnType } from '../../entities/DimReturnType';
 import { DimStatCycle } from '../../entities/DimStatCycle';
 import { initializeDataSource } from './dataSource';
+import { Logger, LogLevel } from '../../utils/logger';
 
 export async function upsertToken(currencyId: any) {
+    const logger = Logger.getInstance();
+    logger.setLogLevel(process.env.LOG_LEVEL as LogLevel || LogLevel.INFO);
+    
+    const tokenTimer = logger.time('Upsert token');
     const dataSource = await initializeDataSource();
     const assetTypeRepo = dataSource.getRepository(DimAssetType);
     const tokenRepo = dataSource.getRepository(DimToken);
+    
+    logger.debug('Processing token', { currencyId });
     
     // Handle object input by extracting relevant fields or stringifying
     let currencyIdStr: string;
@@ -61,7 +68,7 @@ export async function upsertToken(currencyId: any) {
         }
     });
 
-    console.log(`Processing token ${currencyIdStr}, found existing: ${!!token}`);
+    logger.debug(`Processing token ${currencyIdStr}, found existing: ${!!token}`);
     
     if (!token) {
         token = await tokenRepo.save({
@@ -86,17 +93,24 @@ export async function upsertToken(currencyId: any) {
     }
     
     if (token) {
-        console.log(`Token ${token.symbol} (${token.address}) processed`);
+        logger.info(`Token ${token.symbol} (${token.address}) processed`);
     } else {
-        console.error(`Failed to process token ${currencyIdStr}`);
+        logger.error(`Failed to process token ${currencyIdStr}`);
     }
+    
+    tokenTimer.end();
     return token;
 }
 
 export async function initializeDimensionTables() {
+    const logger = Logger.getInstance();
+    logger.setLogLevel(process.env.LOG_LEVEL as LogLevel || LogLevel.INFO);
+    
+    const initTimer = logger.time('Initialize dimension tables');
     const dataSource = await initializeDataSource();
     
     // Initialize chain
+    logger.debug('Initializing chain');
     const chainRepo = dataSource.getRepository(DimChain);
     let chain = await chainRepo.findOne({ where: { name: 'Acala' } });
     if (!chain) {
@@ -104,9 +118,11 @@ export async function initializeDimensionTables() {
             name: 'Acala',
             chainId: 1
         });
+        logger.debug('Created new chain record');
     }
 
     // Initialize asset types
+    logger.debug('Initializing asset types');
     const assetTypeRepo = dataSource.getRepository(DimAssetType);
     const assetTypes = [
         { name: 'Native', description: 'Native token of the chain' },
@@ -119,10 +135,12 @@ export async function initializeDimensionTables() {
         let existing = await assetTypeRepo.findOne({ where: { name: type.name } });
         if (!existing) {
             await assetTypeRepo.save(type);
+            logger.debug(`Created asset type: ${type.name}`);
         }
     }
 
     // Initialize return types
+    logger.debug('Initializing return types');
     const returnTypeRepo = dataSource.getRepository(DimReturnType);
     const returnTypes = [
         { name: 'Staking', description: 'Staking rewards' },
@@ -134,10 +152,12 @@ export async function initializeDimensionTables() {
         let existing = await returnTypeRepo.findOne({ where: { name: type.name } });
         if (!existing) {
             await returnTypeRepo.save(type);
+            logger.debug(`Created return type: ${type.name}`);
         }
     }
 
     // Initialize stat cycles
+    logger.debug('Initializing stat cycles');
     const statCycleRepo = dataSource.getRepository(DimStatCycle);
     const statCycles = [
         { name: 'Daily', description: 'Daily statistics', days: 1 },
@@ -151,6 +171,9 @@ export async function initializeDimensionTables() {
         let existing = await statCycleRepo.findOne({ where: { name: cycle.name } });
         if (!existing) {
             await statCycleRepo.save(cycle);
+            logger.debug(`Created stat cycle: ${cycle.name}`);
         }
     }
+    
+    initTimer.end();
 }

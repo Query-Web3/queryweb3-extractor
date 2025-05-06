@@ -8,8 +8,13 @@ import { Event } from '../../entities/Event';
 import { initializeDataSource } from './dataSource';
 import { getTokenPriceFromOracle } from './utils';
 import { Between } from 'typeorm';
+import { Logger, LogLevel } from '../../utils/logger';
 
 export async function processTokenStats() {
+    const logger = Logger.getInstance();
+    logger.setLogLevel(process.env.LOG_LEVEL as LogLevel || LogLevel.INFO);
+    
+    const statsTimer = logger.time('Process token stats');
     const dataSource = await initializeDataSource();
     const tokenRepo = dataSource.getRepository(DimToken);
     const dailyStatRepo = dataSource.getRepository(FactTokenDailyStat);
@@ -39,9 +44,11 @@ export async function processTokenStats() {
     const lastYear = new Date(today);
     lastYear.setFullYear(lastYear.getFullYear() - 1);
 
+    logger.info(`Processing stats for ${tokens.length} tokens`);
+    
     for (const token of tokens) {
-        const tokenStartTime = Date.now();
-        console.log(`Processing stats for token ${token.symbol} (${token.address})`);
+        const tokenTimer = logger.time(`Process token ${token.symbol}`);
+        logger.info(`Processing stats for token ${token.symbol} (${token.address})`);
         
         try {
             const events = await eventRepo.find({
@@ -56,7 +63,7 @@ export async function processTokenStats() {
             });
 
             // Calculate daily volume and txns
-            console.log(`Found ${events.length} relevant events for token ${token.symbol}`);
+            logger.debug(`Found ${events.length} relevant events for token ${token.symbol}`);
             
             const dailyVolume = events.reduce((sum, event) => {
                 let amount = 0;
@@ -111,10 +118,10 @@ export async function processTokenStats() {
             };
 
             if (!existingStat) {
-                console.log(`Inserting new stat record for ${token.symbol}:`, statData);
+                logger.debug(`Inserting new stat record for ${token.symbol}`, statData);
                 await dailyStatRepo.insert(statData);
             } else {
-                console.log(`Updating existing stat record for ${token.symbol}:`, statData);
+                logger.debug(`Updating existing stat record for ${token.symbol}`, statData);
                 await dailyStatRepo.update(existingStat.id, statData);
             }
 
@@ -264,13 +271,13 @@ export async function processTokenStats() {
             } else {
                 await yearlyStatRepo.update(existingYearlyStat.id, yearlyStat);
             }
-            const tokenEndTime = Date.now();
-            console.log(`Processed token ${token.symbol} in ${(tokenEndTime - tokenStartTime)/1000}s`);
+            tokenTimer.end();
         } catch (error) {
-            console.error(`Error processing token ${token.symbol}:`, error);
+            logger.error(`Error processing token ${token.symbol}`, error as Error);
             continue;
         }
     }
     
-    console.log('Finished processing all token stats');
+    logger.info('Finished processing all token stats');
+    statsTimer.end();
 }

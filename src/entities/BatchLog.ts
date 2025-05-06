@@ -61,4 +61,15 @@ export class BatchLog {
 
   @Column({ name: 'lock_status', type: 'enum', enum: LockStatus, nullable: true })
   lockStatus?: LockStatus;
+
+  @Column({ type: 'json', nullable: true })
+  logs?: Array<{
+    timestamp: Date;
+    level: string;
+    message: string;
+    details?: any;
+  }>;
+
+  @Column({ type: 'text', nullable: true })
+  errorDetails?: string;
 }

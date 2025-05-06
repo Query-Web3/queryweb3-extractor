@@ -8,8 +8,12 @@ import { upsertToken, initializeDimensionTables } from './tokenProcessor';
 import { processTokenStats } from './tokenStatsProcessor';
 import { processYieldStats } from './yieldStatsProcessor';
 import { v4 as uuidv4 } from 'uuid';
+import { Logger, LogLevel } from '../../utils/logger';
 
 export async function transformData(batchLog?: BatchLog) {
+    const logger = Logger.getInstance();
+    logger.setLogLevel(process.env.LOG_LEVEL as LogLevel || LogLevel.INFO);
+
     if (!batchLog) {
         batchLog = new BatchLog();
         batchLog.id = 0;
@@ -20,27 +24,31 @@ export async function transformData(batchLog?: BatchLog) {
         batchLog.retryCount = 0;
         batchLog.processed_block_count = 0;
     }
+    logger.setBatchLog(batchLog);
 
-    console.log('Starting data transformation from Acala to DIM tables...');
+    logger.info('Starting data transformation from Acala to DIM tables...');
     
     try {
-        console.log('Initializing data source...');
+        const initTimer = logger.time('Initialize data source');
+        logger.info('Initializing data source...');
         const dataSource = await initializeDataSource();
-        console.log('Data source initialized successfully');
+        logger.info('Data source initialized successfully');
         
         if (!dataSource.isInitialized) {
-            console.log('Initializing database connection...');
+            logger.info('Initializing database connection...');
             await dataSource.initialize();
         }
-        console.log('Database connection established');
+        logger.info('Database connection established');
+        initTimer.end();
 
         const queryRunner = dataSource.createQueryRunner();
         await queryRunner.connect();
         await queryRunner.startTransaction();
         
         try {
+            const blockTimer = logger.time('Query latest block');
             const blockRepo = dataSource.getRepository(Block);
-            console.log('Querying latest block...');
+            logger.info('Querying latest block...');
             const latestBlock = await blockRepo.findOne({ 
                 where: {},
                 order: { number: 'DESC' }
@@ -50,7 +58,8 @@ export async function transformData(batchLog?: BatchLog) {
                 throw new Error('No blocks found in acala_block table');
             }
             
-            console.log(`Processing latest block #${latestBlock.number} (batchId: ${latestBlock.batchId})`);
+            logger.info(`Processing latest block #${latestBlock.number} (batchId: ${latestBlock.batchId})`);
+            blockTimer.end();
 
             const methodsToProcess = [
                 'tokens.transfer',
@@ -60,13 +69,19 @@ export async function transformData(batchLog?: BatchLog) {
                 'homa.requestRedeem'
             ];
 
+            const processTimer = logger.time('Process extrinsics');
             for (const method of methodsToProcess) {
+                const methodTimer = logger.time(`Process ${method}`);
+                logger.debug(`Processing method: ${method}`);
+                
                 const extrinsics = await dataSource.getRepository(Extrinsic)
                     .createQueryBuilder('extrinsic')
                     .where('extrinsic.method = :method', { method })
                     .groupBy('extrinsic.params')
                     .getMany();
 
+                logger.info(`Found ${extrinsics.length} extrinsics for method ${method}`);
+                
                 for (const extrinsic of extrinsics) {
                     try {
                         if (method.startsWith('tokens.')) {
@@ -85,10 +100,16 @@ export async function transformData(batchLog?: BatchLog) {
                             await upsertToken('ACA');
                         }
                     } catch (e) {
-                        console.error(`Failed to process ${method} extrinsic:`, extrinsic, e);
+                        logger.error(`Failed to process ${method} extrinsic`, e as Error, {
+                            extrinsicId: extrinsic.id,
+                            method,
+                            params: extrinsic.params
+                        });
                     }
                 }
+                methodTimer.end();
             }
+            processTimer.end();
 
             const eventPatterns = [
                 { section: 'tokens', method: 'transfer' },
@@ -98,8 +119,11 @@ export async function transformData(batchLog?: BatchLog) {
                 { section: 'rewards', method: 'reward' }
             ];
 
+            const eventTimer = logger.time('Process events');
             for (const pattern of eventPatterns) {
-                console.log(`Querying events matching ${pattern.section}.${pattern.method}...`);
+                const patternTimer = logger.time(`Process ${pattern.section}.${pattern.method}`);
+                logger.debug(`Querying events matching ${pattern.section}.${pattern.method}...`);
+                
                 const events = await dataSource.getRepository(Event)
                     .createQueryBuilder('event')
                     .where('LOWER(event.section) = LOWER(:section) AND LOWER(event.method) = LOWER(:method)', {
@@ -108,7 +132,8 @@ export async function transformData(batchLog?: BatchLog) {
                     })
                     .groupBy('event.data')
                     .getMany();
-                console.log(`Found ${events.length} events matching ${pattern.section}.${pattern.method}`);
+                
+                logger.info(`Found ${events.length} events matching ${pattern.section}.${pattern.method}`);
 
                 for (const event of events) {
                     try {
@@ -117,33 +142,35 @@ export async function transformData(batchLog?: BatchLog) {
                             await upsertToken(data.currencyId);
                         }
                     } catch (e) {
-                        console.error(`Failed to process ${pattern.section}.${pattern.method} event:`, event, e);
+                        logger.error(`Failed to process ${pattern.section}.${pattern.method} event`, e as Error, {
+                            eventId: event.id,
+                            section: pattern.section,
+                            method: pattern.method,
+                            data: event.data
+                        });
                     }
                 }
+                patternTimer.end();
             }
+            eventTimer.end();
 
+            const statsTimer = logger.time('Process stats');
             await initializeDimensionTables();
             await processTokenStats();
             await processYieldStats();
+            statsTimer.end();
             
             await queryRunner.commitTransaction();
-            console.log('Data transformation completed and committed');
+            logger.info('Data transformation completed and committed');
         } catch (e) {
             await queryRunner.rollbackTransaction();
-            console.error('Transaction rolled back due to error:', e);
+            logger.error('Transaction rolled back due to error', e as Error);
             throw e;
         } finally {
             await queryRunner.release();
         }
     } catch (e) {
-        console.error('Transform failed:', e);
-        
-        if (e instanceof Error) {
-            console.error('Error stack:', e.stack);
-        } else {
-            console.error('Full error object:', JSON.stringify(e, null, 2));
-        }
-        
+        logger.error('Transform failed', e as Error);
         throw e;
     }
 }
