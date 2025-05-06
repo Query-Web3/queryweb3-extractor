@@ -18,11 +18,12 @@ export async function runExtract(options?: {startBlock?: number, endBlock?: numb
         let batchLog;
         try {
             // Create a new batch log record in the database with a unique batch ID and set its status to RUNNING
-            batchLog = await (await initializeDataSource()).getRepository(BatchLog).save({
+            const batchLogRepo = (await initializeDataSource()).getRepository(BatchLog);
+            batchLog = await batchLogRepo.save(batchLogRepo.create({
                 batchId: uuidv4(),
                 status: BatchStatus.RUNNING,
                 type: BatchType.EXTRACT
-            });
+            }));
             
             // Call the extractData function with the created batch log to start the data extraction process
             const result = await extractData(batchLog, startBlock, endBlock);

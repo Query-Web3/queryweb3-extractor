@@ -16,11 +16,12 @@ export async function runTransform() {
         let batchLog;
         try {
             const dataSource = await initializeDataSource();
-            batchLog = await dataSource.getRepository(BatchLog).save({
+            const batchLogRepo = dataSource.getRepository(BatchLog);
+            batchLog = await batchLogRepo.save(batchLogRepo.create({
                 batchId: uuidv4(),
                 status: BatchStatus.RUNNING,
                 type: BatchType.TRANSFORM
-            });
+            }));
             
             logger.setBatchLog(batchLog);
             logger.info('Starting transform batch');

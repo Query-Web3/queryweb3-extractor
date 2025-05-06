@@ -17,8 +17,8 @@ export async function showLastBatchLog(type: BatchType) {
         console.log(`Batch ID: ${lastLog.batchId}`);
         console.log(`Start Time: ${lastLog.startTime}`);
         console.log(`End Time: ${lastLog.endTime || 'N/A'}`);
-        console.log(`Status: ${BatchStatus[lastLog.status]}`);
-        console.log(`Type: ${BatchType[lastLog.type]}`);
+        console.log(`Status: ${lastLog.status}`);
+        console.log(`Type: ${lastLog.type}`);
         console.log(`Processed Blocks: ${lastLog.processed_block_count}`);
         console.log(`Last Processed Height: ${lastLog.last_processed_height || 'N/A'}`);
     } else {
