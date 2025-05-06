@@ -1,4 +1,5 @@
 import { processBlocks } from './processor';
+import { determineBlockRange } from './blockRange';
 import { BatchLog, BatchStatus, BatchType } from '../../entities/BatchLog';
 import { showLastBatchLog, pauseBatch, resumeBatch } from '../common/batchLog';
 import { initializeDataSource } from './dataSource';
@@ -6,7 +7,8 @@ import { initializeDataSource } from './dataSource';
 export async function extractData(
     batchLog?: {id: number, batchId: string} | null, 
     startBlock?: number, 
-    endBlock?: number
+    endBlock?: number,
+    timeRange?: string
 ): Promise<{processedCount: number, lastProcessedHeight: number | null}> {
     if (!batchLog) {
         const dataSource = await initializeDataSource();
@@ -17,6 +19,14 @@ export async function extractData(
             type: BatchType.EXTRACT
         }));
     }
+    
+    // Calculate block range if timeRange is provided
+    if (timeRange) {
+        const range = await determineBlockRange(undefined, undefined, timeRange);
+        startBlock = range.startBlock;
+        endBlock = range.endBlock;
+    }
+    
     return processBlocks(batchLog, startBlock, endBlock);
 }
 

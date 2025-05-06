@@ -33,12 +33,30 @@ export async function determineBlockRange(
         const latestBlock = header.number.toNumber();
         const latestTimestamp = parseInt((await api.query.timestamp.now()).toString());
         
-        // Estimate block time (ms per block)
-        const blockTime = 12000; // Acala has ~12s block time
+        // Calculate dynamic average block time
+        const sampleBlocks = 10; // Number of blocks to sample for average
+        const sampleHeaders = await Promise.all(
+            Array.from({length: sampleBlocks}, (_, i) => 
+                api.rpc.chain.getBlockHash(Math.max(1, latestBlock - i - 1))
+            )
+        );
+        const sampleTimestamps = await Promise.all(
+            sampleHeaders.map(hash => 
+                api.query.timestamp.now.at(hash)
+            )
+        );
+        const blockTimes = [];
+        for (let i = 1; i < sampleBlocks; i++) {
+            const prevTimestamp = parseInt(sampleTimestamps[i-1].toString());
+            const currTimestamp = parseInt(sampleTimestamps[i].toString());
+            const timeDiff = prevTimestamp - currTimestamp;
+            blockTimes.push(timeDiff);
+        }
+        const avgBlockTime = blockTimes.reduce((a, b) => a + b, 0) / blockTimes.length;
         
-        // Calculate approximate block number at target time
+        // Calculate block number at target time
         const timeDiff = latestTimestamp - targetTime;
-        const blocksDiff = Math.floor(timeDiff / blockTime);
+        const blocksDiff = Math.floor(timeDiff / avgBlockTime);
         startBlock = Math.max(0, latestBlock - blocksDiff);
         endBlock = latestBlock;
         
