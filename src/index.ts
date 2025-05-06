@@ -70,10 +70,7 @@ program.command('extract')
                 return;
             }
 
-            await extractData({
-                id: 0,
-                batchId: 'cli-' + Date.now()
-            }, options.startBlock, options.endBlock);
+            await extractData(undefined, options.startBlock, options.endBlock);
         } finally {
             if (extractDataSource.isInitialized) {
                 await extractDataSource.destroy();
