@@ -59,28 +59,55 @@ export class WeeklyStatsProcessor {
             const txnsYoY = prevYearStat ? 
                 ((weeklyTxns - prevYearStat.txnsCount) / prevYearStat.txnsCount * 100) : 0;
 
+            // First ensure token exists in dim_tokens table
+            const tokenRecord = await this.repository.tokenRepo.findOne({ 
+                where: { id: token.id } 
+            });
+            if (!tokenRecord) {
+                throw new Error(`Token with ID ${token.id} not found in dim_tokens table`);
+            }
+
+            // Calculate QoQ changes
+            const volumeQoQ = prevWeekStat ? 
+                ((weeklyVolume - prevWeekStat.volume) / prevWeekStat.volume * 100) : 0;
+            const txnsQoQ = prevWeekStat ? 
+                ((weeklyTxns - prevWeekStat.txnsCount) / prevWeekStat.txnsCount * 100) : 0;
+
             const weeklyStat = {
-                tokenId: token.id,
+                tokenId: tokenRecord.id,
                 date: today,
-                cycleId: this.repository.weeklyCycle?.id,
                 volume: weeklyVolume,
                 volumeUsd: weeklyVolume * tokenPrice,
                 txnsCount: weeklyTxns,
                 priceUsd: tokenPrice,
-                volumeYoY,
-                txnsYoY
+                volumeYoy: volumeYoY,
+                volumeQoq: volumeQoQ,
+                txnsYoy: txnsYoY,
+                txnsQoq: txnsQoQ
             };
 
             const existingWeeklyStat = await this.repository.weeklyStatRepo.findOne({
-                where: { tokenId: token.id, date: today }
+                where: { tokenId: tokenRecord.id, date: today }
             });
 
             if (!existingWeeklyStat) {
-                this.logger.debug(`Inserting new weekly stat record for ${token.symbol}`, weeklyStat);
-                await this.repository.weeklyStatRepo.insert(weeklyStat);
-            } else {
+                this.logger.debug(`Inserting new weekly stat record for ${token.symbol}`, {
+                    ...weeklyStat,
+                    tokenSymbol: tokenRecord.symbol,
+                    tokenAddress: tokenRecord.address
+                });
+                const result = await this.repository.weeklyStatRepo.insert(weeklyStat);
+                if (!result.identifiers[0]?.id) {
+                    throw new Error(`Failed to insert weekly stat record for ${token.symbol}`);
+                }
+            } else if (existingWeeklyStat.id) {
                 this.logger.debug(`Updating existing weekly stat record for ${token.symbol}`, weeklyStat);
-                await this.repository.weeklyStatRepo.update(existingWeeklyStat.id, weeklyStat);
+                const result = await this.repository.weeklyStatRepo.update(existingWeeklyStat.id, weeklyStat);
+                if (result.affected === 0) {
+                    throw new Error(`Failed to update weekly stat record for ${token.symbol}`);
+                }
+            } else {
+                throw new Error(`Existing weekly stat record has no ID for ${token.symbol}`);
             }
 
             tokenTimer.end();

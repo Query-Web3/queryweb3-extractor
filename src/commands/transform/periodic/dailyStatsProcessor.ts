@@ -11,6 +11,11 @@ export class DailyStatsProcessor {
         this.logger.info(`Processing daily stats for token ${token.symbol} (${token.address})`);
         
         try {
+            // Validate token has ID and is properly linked to dim_tokens
+            if (!token?.id) {
+                throw new Error(`Invalid token object: ID is missing for ${token?.symbol || 'unknown token'}`);
+            }
+
             const events = await this.repository.eventRepo.createQueryBuilder('event')
                 .where(`(
                     (event.section = 'Tokens' AND event.method = 'Transfer' AND JSON_EXTRACT(event.data, '$.currencyId') = :tokenAddress) OR
@@ -19,8 +24,7 @@ export class DailyStatsProcessor {
                     (event.section = 'Homa' AND event.method = 'Minted' AND JSON_EXTRACT(event.data, '$.currencyId') = :tokenAddress) OR
                     (event.section = 'Homa' AND event.method = 'Redeemed' AND JSON_EXTRACT(event.data, '$.currencyId') = :tokenAddress) OR
                     (event.section = 'Rewards' AND event.method = 'Reward' AND JSON_EXTRACT(event.data, '$.currencyId') = :tokenAddress)
-                )
-                `, { tokenAddress: token.address })
+                )`, { tokenAddress: token.address })
                 .getMany();
 
             // Calculate daily volume and txns
@@ -76,24 +80,26 @@ export class DailyStatsProcessor {
             const txnsYoY = prevYearStat ? 
                 ((dailyTxns - prevYearStat.txnsCount) / prevYearStat.txnsCount * 100) : 0;
 
-            // Validate token has ID before proceeding
-            if (!token?.id) {
-                throw new Error(`Invalid token object: ID is missing for ${token?.symbol || 'unknown token'}`);
-            }
-
             // Get or create today's stat
             const existingStat = await this.repository.dailyStatRepo.findOne({
                 where: { tokenId: token.id, date: today }
             });
 
             try {
-                // Double check token.id exists
-                if (!token.id) {
-                    throw new Error(`Token ID validation failed for ${token.symbol}`);
+                // First ensure token exists in dim_tokens table
+                const tokenRecord = await this.repository.tokenRepo.findOne({ 
+                    where: { id: token.id } 
+                });
+                if (!tokenRecord) {
+                    throw new Error(`Token with ID ${token.id} not found in dim_tokens table`);
                 }
 
+                // Calculate txns_qoq based on previous day's stats
+                const txnsQoQ = prevDayStat ? 
+                    ((dailyTxns - prevDayStat.txnsCount) / prevDayStat.txnsCount * 100) : 0;
+
                 const statData = {
-                    token_id: token.id,
+                    token_id: tokenRecord.id, // Use the ID from dim_tokens
                     date: today,
                     cycle_id: this.repository.dailyCycle?.id,
                     volume: dailyVolume,
@@ -103,6 +109,7 @@ export class DailyStatsProcessor {
                     volume_yoy: volumeYoY,
                     volume_qoq: volumeQoQ,
                     txns_yoy: txnsYoY,
+                    txns_qoq: txnsQoQ,
                     volume_wow: prevWeekStat ?
                         ((dailyVolume - prevWeekStat.volume) / prevWeekStat.volume * 100) : 0,
                     volume_mom: prevMonthStat ?
@@ -110,11 +117,11 @@ export class DailyStatsProcessor {
                 };
 
                 if (!existingStat) {
-                    // Ensure all required fields are present before insert
-                    if (!statData.token_id || !statData.date) {
-                        throw new Error(`Missing required fields for new stat record: token_id=${statData.token_id}, date=${statData.date}`);
-                    }
-                    this.logger.debug(`Inserting new daily stat record for ${token.symbol}`, statData);
+                    this.logger.debug(`Inserting new daily stat record for ${token.symbol}`, {
+                        ...statData,
+                        token_symbol: tokenRecord.symbol,
+                        token_address: tokenRecord.address
+                    });
                     const result = await this.repository.dailyStatRepo.insert(statData);
                     if (!result.identifiers[0]?.id) {
                         throw new Error(`Failed to insert daily stat record for ${token.symbol}`);
@@ -125,16 +132,14 @@ export class DailyStatsProcessor {
                     if (result.affected === 0) {
                         throw new Error(`Failed to update daily stat record for ${token.symbol}`);
                     }
-                } else {
-                    throw new Error(`Existing stat record has no ID for ${token.symbol}`);
                 }
+
+                tokenTimer.end();
+                return true;
             } catch (error) {
                 this.logger.error(`Failed to save daily stats for token ${token.symbol}`, error as Error);
                 throw error;
             }
-
-            tokenTimer.end();
-            return true;
         } catch (error) {
             this.logger.error(`Error processing daily stats for token ${token.symbol}`, error as Error);
             return false;
