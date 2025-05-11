@@ -43,12 +43,24 @@ export async function processYieldStats() {
 
         // Batch fetch all reward and transfer events
         const rewardEvents = await eventRepo.find({
-            where: { section: 'Rewards', method: 'Reward' }
+            where: { 
+                section: 'Rewards', 
+                method: 'Reward',
+                data: { currencyId: () => `JSON_EXTRACT(data, '$.currencyId')` }
+            }
         });
         const transferEvents = await eventRepo.find({
             where: [
-                { section: 'Tokens', method: 'Transfer' },
-                { section: 'Balances', method: 'Transfer' }
+                { 
+                    section: 'Tokens', 
+                    method: 'Transfer',
+                    data: { currencyId: () => `JSON_EXTRACT(data, '$.currencyId')` }
+                },
+                { 
+                    section: 'Balances', 
+                    method: 'Transfer',
+                    data: { currencyId: () => `JSON_EXTRACT(data, '$.currencyId')` }
+                }
             ]
         });
 
@@ -64,10 +76,12 @@ export async function processYieldStats() {
         // Process tokens in parallel
         await Promise.all(tokens.map(async token => {
             const tokenRewards = rewardEvents.filter(e => 
-                e.data?.currencyId === token.address
+                e.data?.currencyId === token.address || 
+                (e.data && JSON.parse(e.data).currencyId === token.address)
             );
             const tokenTransfers = transferEvents.filter(e => 
-                e.data?.currencyId === token.address
+                e.data?.currencyId === token.address ||
+                (e.data && JSON.parse(e.data).currencyId === token.address)
             );
 
             const dailyRewards = tokenRewards.reduce((sum, e) => 
