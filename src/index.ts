@@ -208,6 +208,47 @@ program.command('block')
         })();
     });
 
+program.command('trunk')
+    .description('Truncate tables with specified schema prefix')
+    .option('-s, --schema <string>', 'Schema prefix for tables to truncate', 'acala')
+    .action((options) => {
+        (async () => {
+            try {
+                await extractDataSource.initialize();
+                const queryRunner = extractDataSource.createQueryRunner();
+                
+                await queryRunner.connect();
+                const tables = await queryRunner.query(
+                    `SELECT table_name 
+                     FROM information_schema.tables 
+                     WHERE table_schema = 'public' 
+                     AND table_name LIKE '${options.schema}_%'`
+                );
+
+                if (tables.length === 0) {
+                    console.log(`No tables found with prefix '${options.schema}_'`);
+                    return;
+                }
+
+                console.log(`Truncating ${tables.length} tables with prefix '${options.schema}_'`);
+                for (const table of tables) {
+                    await queryRunner.query(`TRUNCATE TABLE ${table.table_name} RESTART IDENTITY CASCADE`);
+                    console.log(`Truncated table: ${table.table_name}`);
+                }
+                
+                console.log('Truncate operation completed successfully');
+            } catch (err) {
+                console.error('Error truncating tables:', err);
+                process.exit(1);
+            } finally {
+                if (extractDataSource.isInitialized) {
+                    await extractDataSource.destroy();
+                }
+                process.exit(0);
+            }
+        })();
+    });
+
 program.parseAsync(process.argv).catch(async (err: Error) => {
     console.error(err);
     if (extractDataSource.isInitialized) await extractDataSource.destroy();
