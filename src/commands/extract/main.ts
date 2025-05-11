@@ -5,7 +5,7 @@ import { showLastBatchLog, pauseBatch, resumeBatch } from '../common/batchLog';
 import { initializeDataSource } from './dataSource';
 
 export async function extractData(
-    batchLog?: {id: number, batchId: string} | null, 
+    batchLog?: BatchLog | null,
     startBlock?: number, 
     endBlock?: number,
     timeRange?: string
@@ -15,8 +15,12 @@ export async function extractData(
         const batchLogRepo = dataSource.getRepository(BatchLog);
         batchLog = await batchLogRepo.save(batchLogRepo.create({
             batchId: 'cli-' + Date.now(),
+            startTime: new Date(),
             status: BatchStatus.RUNNING,
-            type: BatchType.EXTRACT
+            type: BatchType.EXTRACT,
+            retryCount: 0,
+            processed_block_count: 0,
+            last_processed_height: null
         }));
     }
     
