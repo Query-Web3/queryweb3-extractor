@@ -53,11 +53,20 @@ export class MonthlyStatsProcessor {
                 where: { tokenId: token.id, date: new Date(today.setFullYear(today.getFullYear() - 1)) } 
             });
 
-            // Calculate YoY changes
+            // Calculate YoY and QoQ changes
             const volumeYoY = prevYearStat ? 
                 ((monthlyVolume - prevYearStat.volume) / prevYearStat.volume * 100) : 0;
             const txnsYoY = prevYearStat ? 
                 ((monthlyTxns - prevYearStat.txnsCount) / prevYearStat.txnsCount * 100) : 0;
+            
+            // Calculate QoQ changes (previous quarter = 3 months ago)
+            const prevQuarterStat = await this.repository.monthlyStatRepo.findOne({ 
+                where: { tokenId: token.id, date: new Date(today.setMonth(today.getMonth() - 3)) } 
+            });
+            const volumeQoQ = prevQuarterStat ? 
+                ((monthlyVolume - prevQuarterStat.volume) / prevQuarterStat.volume * 100) : 0;
+            const txnsQoQ = prevQuarterStat ? 
+                ((monthlyTxns - prevQuarterStat.txnsCount) / prevQuarterStat.txnsCount * 100) : 0;
 
             const monthlyStat = {
                 tokenId: token.id,
@@ -68,7 +77,9 @@ export class MonthlyStatsProcessor {
                 txnsCount: monthlyTxns,
                 priceUsd: tokenPrice,
                 volumeYoY,
-                txnsYoY
+                txnsYoY,
+                volumeQoq: volumeQoQ,
+                txnsQoq: txnsQoQ
             };
 
             const existingMonthlyStat = await this.repository.monthlyStatRepo.findOne({

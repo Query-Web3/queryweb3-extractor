@@ -74,11 +74,11 @@ export class DailyStatsProcessor {
 
             // Calculate YoY/QoQ changes
             const volumeYoY = prevYearStat ? 
-                ((dailyVolume - prevYearStat.volume) / prevYearStat.volume * 100) : 0;
+                ((dailyVolume - prevYearStat.volume) / prevYearStat.volume * 100) : null;
             const volumeQoQ = prevDayStat ? 
-                ((dailyVolume - prevDayStat.volume) / prevDayStat.volume * 100) : 0;
+                ((dailyVolume - prevDayStat.volume) / prevDayStat.volume * 100) : null;
             const txnsYoY = prevYearStat ? 
-                ((dailyTxns - prevYearStat.txnsCount) / prevYearStat.txnsCount * 100) : 0;
+                ((dailyTxns - prevYearStat.txnsCount) / prevYearStat.txnsCount * 100) : null;
 
             // Get or create today's stat
             const existingStat = await this.repository.dailyStatRepo.findOne({
@@ -94,9 +94,21 @@ export class DailyStatsProcessor {
                     throw new Error(`Token with ID ${token.id} not found in dim_tokens table`);
                 }
 
-                // Calculate txns_qoq based on previous day's stats
-                const txnsQoQ = prevDayStat ? 
-                    ((dailyTxns - prevDayStat.txnsCount) / prevDayStat.txnsCount * 100) : 0;
+                // Calculate txns_qoq based on previous quarter's stats (90 days ago)
+                const prevQuarterDate = new Date(today);
+                prevQuarterDate.setDate(prevQuarterDate.getDate() - 90);
+                const prevQuarterStat = await this.repository.dailyStatRepo
+                    .createQueryBuilder('stat')
+                    .select('SUM(stat.volume) as volume, SUM(stat.txns_count) as txns_count')
+                    .where('stat.token_id = :tokenId', { tokenId: token.id })
+                    .andWhere('stat.date BETWEEN :start AND :end', {
+                        start: new Date(prevQuarterDate.setDate(prevQuarterDate.getDate() - 90)),
+                        end: prevQuarterDate
+                    })
+                    .getRawOne();
+                
+                const txnsQoQ = prevQuarterStat?.txns_count ? 
+                    ((dailyTxns - prevQuarterStat.txns_count) / prevQuarterStat.txns_count * 100) : 0;
 
                 const statData = {
                     token_id: tokenRecord.id, // Use the ID from dim_tokens

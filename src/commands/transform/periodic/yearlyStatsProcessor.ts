@@ -45,10 +45,14 @@ export class YearlyStatsProcessor {
             // Get token price from oracle (use default 1.0 if not available)
             const tokenPrice = await getTokenPriceFromOracle(token.address) ?? 1.0;
 
-            // Get previous stats for comparisons
+            // Get previous year's stats and calculate YoY changes
             const prevYearStat = await this.repository.yearlyStatRepo.findOne({ 
                 where: { tokenId: token.id, date: new Date(today.setFullYear(today.getFullYear() - 2)) } 
             });
+            const volumeYoY = prevYearStat ? 
+                ((yearlyVolume - prevYearStat.volume) / prevYearStat.volume * 100) : 0;
+            const txnsYoY = prevYearStat ? 
+                ((yearlyTxns - prevYearStat.txnsCount) / prevYearStat.txnsCount * 100) : 0;
 
             const yearlyStat = {
                 tokenId: token.id,
@@ -57,7 +61,9 @@ export class YearlyStatsProcessor {
                 volume: yearlyVolume,
                 volumeUsd: yearlyVolume * tokenPrice,
                 txnsCount: yearlyTxns,
-                priceUsd: tokenPrice
+                priceUsd: tokenPrice,
+                volumeYoy: volumeYoY,
+                txnsYoy: txnsYoY
             };
 
             const existingYearlyStat = await this.repository.yearlyStatRepo.findOne({

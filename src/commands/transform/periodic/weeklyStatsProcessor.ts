@@ -55,9 +55,9 @@ export class WeeklyStatsProcessor {
 
             // Calculate YoY changes
             const volumeYoY = prevYearStat ? 
-                ((weeklyVolume - prevYearStat.volume) / prevYearStat.volume * 100) : 0;
+                ((weeklyVolume - prevYearStat.volume) / prevYearStat.volume * 100) : undefined;
             const txnsYoY = prevYearStat ? 
-                ((weeklyTxns - prevYearStat.txnsCount) / prevYearStat.txnsCount * 100) : 0;
+                ((weeklyTxns - prevYearStat.txnsCount) / prevYearStat.txnsCount * 100) : undefined;
 
             // First ensure token exists in dim_tokens table
             const tokenRecord = await this.repository.tokenRepo.findOne({ 

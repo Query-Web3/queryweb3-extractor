@@ -24,16 +24,16 @@ export class FactTokenWeeklyStat {
   @Column({ name: 'price_usd', type: 'decimal', precision: 36, scale: 18 })
   priceUsd: number;
 
-  @Column({ name: 'volume_yoy', type: 'decimal', precision: 10, scale: 2, nullable: true })
+  @Column({ name: 'volume_yoy', type: 'decimal', precision: 10, scale: 2 })
   volumeYoy?: number;
 
-  @Column({ name: 'volume_qoq', type: 'decimal', precision: 10, scale: 2, nullable: true })
+  @Column({ name: 'volume_qoq', type: 'decimal', precision: 10, scale: 2 })
   volumeQoq?: number;
 
-  @Column({ name: 'txns_yoy', type: 'decimal', precision: 10, scale: 2, nullable: true })
+  @Column({ name: 'txns_yoy', type: 'decimal', precision: 10, scale: 2 })
   txnsYoy?: number;
 
-  @Column({ name: 'txns_qoq', type: 'decimal', precision: 10, scale: 2, nullable: true })
+  @Column({ name: 'txns_qoq', type: 'decimal', precision: 10, scale: 2 })
   txnsQoq?: number;
 
   @Column({ name: 'created_at', type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
