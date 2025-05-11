@@ -61,13 +61,21 @@ export async function upsertToken(currencyId: any) {
             decimals = 12;
         }
 
-        // Get or create asset type
+        // Get or create asset type with transaction safety
         let assetType = await assetTypeRepo.findOne({ where: { name: assetTypeName } });
         if (!assetType) {
-            assetType = await assetTypeRepo.save({
-                name: assetTypeName,
-                description: assetTypeName === 'LP Token' ? 'Liquidity Pool Token' : 'Native Token'
-            });
+            try {
+                assetType = await assetTypeRepo.save({
+                    name: assetTypeName,
+                    description: assetTypeName === 'LP Token' ? 'Liquidity Pool Token' : 'Native Token'
+                });
+            } catch (error) {
+                // Handle race condition - another process may have created it
+                assetType = await assetTypeRepo.findOne({ where: { name: assetTypeName } });
+                if (!assetType) {
+                    throw new Error(`Failed to create asset type ${assetTypeName}: ${error}`);
+                }
+            }
         }
 
         // Prepare token data
@@ -81,11 +89,16 @@ export async function upsertToken(currencyId: any) {
             updatedAt: new Date()
         };
 
-        // Upsert token
-        const result = await tokenRepo.upsert(tokenData, ['chainId', 'address']);
-        const token = Array.isArray(result.identifiers) ? 
-            result.identifiers[0] as DimToken : 
-            result.identifiers as DimToken;
+        // Upsert token and get full entity
+        await tokenRepo.upsert(tokenData, ['chainId', 'address']);
+        const token = await tokenRepo.findOne({
+            where: { chainId: 1, address: currencyIdStr },
+            relations: ['assetType']
+        });
+        
+        if (!token) {
+            throw new Error(`Failed to find token after upsert: ${currencyIdStr}`);
+        }
         
         // Add to cache
         tokenCache.set(currencyIdStr, token);

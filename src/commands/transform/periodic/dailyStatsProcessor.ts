@@ -76,16 +76,22 @@ export class DailyStatsProcessor {
             const txnsYoY = prevYearStat ? 
                 ((dailyTxns - prevYearStat.txnsCount) / prevYearStat.txnsCount * 100) : 0;
 
+            // Validate token has ID before proceeding
+            if (!token?.id) {
+                throw new Error(`Invalid token object: ID is missing for ${token?.symbol || 'unknown token'}`);
+            }
+
             // Get or create today's stat
             const existingStat = await this.repository.dailyStatRepo.findOne({
                 where: { tokenId: token.id, date: today }
             });
 
-            if (!token.id) {
-                throw new Error(`Token ID is missing for ${token.symbol}`);
-            }
-
             try {
+                // Double check token.id exists
+                if (!token.id) {
+                    throw new Error(`Token ID validation failed for ${token.symbol}`);
+                }
+
                 const statData = {
                     token_id: token.id,
                     date: today,
@@ -104,11 +110,21 @@ export class DailyStatsProcessor {
                 };
 
                 if (!existingStat) {
+                    // Ensure all required fields are present before insert
+                    if (!statData.token_id || !statData.date) {
+                        throw new Error(`Missing required fields for new stat record: token_id=${statData.token_id}, date=${statData.date}`);
+                    }
                     this.logger.debug(`Inserting new daily stat record for ${token.symbol}`, statData);
-                    await this.repository.dailyStatRepo.insert(statData);
+                    const result = await this.repository.dailyStatRepo.insert(statData);
+                    if (!result.identifiers[0]?.id) {
+                        throw new Error(`Failed to insert daily stat record for ${token.symbol}`);
+                    }
                 } else if (existingStat.id) {
                     this.logger.debug(`Updating existing daily stat record for ${token.symbol}`, statData);
-                    await this.repository.dailyStatRepo.update(existingStat.id, statData);
+                    const result = await this.repository.dailyStatRepo.update(existingStat.id, statData);
+                    if (result.affected === 0) {
+                        throw new Error(`Failed to update daily stat record for ${token.symbol}`);
+                    }
                 } else {
                     throw new Error(`Existing stat record has no ID for ${token.symbol}`);
                 }
