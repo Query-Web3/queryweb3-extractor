@@ -37,6 +37,6 @@ export const transformDataSource = new DataSource({
     Block,
     Event
   ],
-  synchronize: false,
+  synchronize: process.env.NODE_ENV === 'development',
   logging: process.env.NODE_ENV === 'development',
 });

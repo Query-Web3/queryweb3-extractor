@@ -33,21 +33,43 @@ export async function upsertToken(currencyId: any) {
                 currencyIdStr = `ForeignAsset-${currencyId.ForeignAsset}`;
                 symbol = currencyId.symbol || `FA${currencyId.ForeignAsset}`;
                 name = currencyId.name || `Foreign Asset ${currencyId.ForeignAsset}`;
-            } 
+            }
             // Handle Token format
             else if (currencyId.Token) {
                 currencyIdStr = `Token-${currencyId.Token}`;
                 symbol = currencyId.symbol || currencyId.Token;
                 name = currencyId.name || `Token ${currencyId.Token}`;
             }
+            // Handle DexShare format
+            else if (currencyId.DexShare) {
+                const [token1, token2] = currencyId.DexShare;
+                const token1Str = token1.Token ? `Token-${token1.Token}` : `ForeignAsset-${token1.ForeignAsset}`;
+                const token2Str = token2.Token ? `Token-${token2.Token}` : `ForeignAsset-${token2.ForeignAsset}`;
+                currencyIdStr = `DexShare-${token1Str}-${token2Str}`;
+                symbol = currencyId.symbol || `LP-${token1Str.slice(0,5)}-${token2Str.slice(0,5)}`;
+                name = currencyId.name || `Dex Share ${token1Str} ${token2Str}`;
+            }
             // Handle plain address
-            else {
+            else if (currencyId.address || currencyId.id) {
                 currencyIdStr = currencyId.address || currencyId.id;
-                if (!currencyIdStr) {
-                    throw new Error('Invalid currencyId object - missing address/id');
-                }
                 symbol = currencyId.symbol || currencyIdStr.slice(0, 20);
                 name = currencyId.name || currencyIdStr.slice(0, 100);
+            }
+            // Handle JSON string input
+            else if (currencyId.data) {
+                try {
+                    const data = typeof currencyId.data === 'string' ? 
+                        JSON.parse(currencyId.data) : currencyId.data;
+                    return upsertToken(data);
+                } catch (e: any) {
+                    throw new Error(`Invalid currencyId JSON: ${e?.message || 'Unknown error'}`);
+                }
+            }
+            // Fallback to string representation
+            else {
+                currencyIdStr = JSON.stringify(currencyId).slice(0, 100);
+                symbol = currencyIdStr.slice(0, 20);
+                name = currencyIdStr;
             }
         } else {
             // Handle string/number input
@@ -113,22 +135,47 @@ export async function upsertToken(currencyId: any) {
             throw new Error(`Invalid token address format: ${tokenData.address}`);
         }
 
-        // Upsert token and get full entity
-        await tokenRepo.upsert(tokenData, ['chainId', 'address']);
-        const token = await tokenRepo.findOne({
-            where: { chainId: 1, address: currencyIdStr },
-            relations: ['assetType']
-        });
-        
-        if (!token) {
-            throw new Error(`Failed to find token after upsert: ${currencyIdStr}`);
+        // Upsert token and get full entity with transaction
+        await queryRunner.startTransaction();
+        try {
+            await tokenRepo.upsert(tokenData, ['chainId', 'address']);
+            // Force fresh query with all fields
+            const token = await tokenRepo.createQueryBuilder('token')
+                .where('token.chainId = :chainId AND token.address = :address', {
+                    chainId: 1,
+                    address: currencyIdStr
+                })
+                .leftJoinAndSelect('token.assetType', 'assetType')
+                .setLock('pessimistic_write')
+                .getOne();
+            
+            if (!token?.id) {
+                throw new Error(`Failed to get valid token entity after upsert: ${currencyIdStr}`);
+            }
+            
+            // Log full token details for debugging
+            logger.debug('Retrieved token entity:', {
+                id: token.id,
+                chainId: token.chainId,
+                address: token.address,
+                symbol: token.symbol,
+                assetType: token.assetType?.name
+            });
+            
+            // Verify all required fields
+            if (!token.id || !token.chainId || !token.address) {
+                throw new Error(`Invalid token entity: missing required fields`);
+            }
+            
+            // Add to cache
+            tokenCache.set(currencyIdStr, token);
+            await queryRunner.commitTransaction();
+            return token;
+        } catch (error) {
+            await queryRunner.rollbackTransaction();
+            throw error;
         }
         
-        // Add to cache
-        tokenCache.set(currencyIdStr, token);
-        
-        logger.info(`Token ${symbol} (${currencyIdStr}) processed`);
-        return token;
     } finally {
         await queryRunner.release();
         tokenTimer.end();
