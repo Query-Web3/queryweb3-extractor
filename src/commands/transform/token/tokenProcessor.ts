@@ -49,6 +49,18 @@ export async function upsertToken(currencyId: any) {
                 symbol = currencyId.symbol || `LP-${token1Str.slice(0,5)}-${token2Str.slice(0,5)}`;
                 name = currencyId.name || `Dex Share ${token1Str} ${token2Str}`;
             }
+            // Handle StableAssetPoolToken format
+            else if (currencyId.StableAssetPoolToken) {
+                currencyIdStr = `StableAsset-${currencyId.StableAssetPoolToken}`;
+                symbol = currencyId.symbol || `SA${currencyId.StableAssetPoolToken}`;
+                name = currencyId.name || `Stable Asset Pool ${currencyId.StableAssetPoolToken}`;
+            }
+            // Handle LiquidCrowdloan format
+            else if (currencyId.LiquidCrowdloan) {
+                currencyIdStr = `LiquidCrowdloan${currencyId.LiquidCrowdloan}`;
+                symbol = currencyId.symbol || `LCD${currencyId.LiquidCrowdloan}`;
+                name = currencyId.name || `Liquid Crowdloan ${currencyId.LiquidCrowdloan}`;
+            }
             // Handle plain address
             else if (currencyId.address || currencyId.id) {
                 currencyIdStr = currencyId.address || currencyId.id;
@@ -135,46 +147,76 @@ export async function upsertToken(currencyId: any) {
             throw new Error(`Invalid token address format: ${tokenData.address}`);
         }
 
-        // Upsert token and get full entity with transaction
-        await queryRunner.startTransaction();
-        try {
-            await tokenRepo.upsert(tokenData, ['chainId', 'address']);
-            // Force fresh query with all fields
-            const token = await tokenRepo.createQueryBuilder('token')
-                .where('token.chainId = :chainId AND token.address = :address', {
-                    chainId: 1,
-                    address: currencyIdStr
-                })
-                .leftJoinAndSelect('token.assetType', 'assetType')
-                .setLock('pessimistic_write')
-                .getOne();
-            
-            if (!token?.id) {
-                throw new Error(`Failed to get valid token entity after upsert: ${currencyIdStr}`);
+        // Upsert token with retry for concurrency issues
+        let retries = 3;
+        let lastError: Error | null = null;
+        
+        while (retries-- > 0) {
+            await queryRunner.startTransaction();
+            try {
+                // First try to find existing token with lock
+                let token = await tokenRepo.createQueryBuilder('token')
+                    .where('token.chainId = :chainId AND token.address = :address', {
+                        chainId: 1,
+                        address: currencyIdStr
+                    })
+                    .setLock('pessimistic_write')
+                    .leftJoinAndSelect('token.assetType', 'assetType')
+                    .getOne();
+
+                if (!token) {
+                    try {
+                        // Insert new token if not exists
+                        token = await tokenRepo.save(tokenData);
+                    } catch (insertError: any) {
+                        // Handle race condition - another process may have inserted it
+                        if (insertError.code === 'ER_DUP_ENTRY') {
+                            await queryRunner.rollbackTransaction();
+                            lastError = insertError;
+                            continue;
+                        }
+                        throw insertError;
+                    }
+                } else {
+                    // Update existing token
+                    token = await tokenRepo.save({
+                        ...token,
+                        ...tokenData,
+                        id: token.id // Ensure ID is preserved
+                    });
+                }
+
+                // Verify all required fields
+                if (!token?.id) {
+                    throw new Error(`Failed to get valid token entity after save: ${JSON.stringify(token)}`);
+                }
+                
+                // Log full token details for debugging
+                logger.debug('Retrieved token entity:', {
+                    id: token.id,
+                    chainId: token.chainId,
+                    address: token.address,
+                    symbol: token.symbol,
+                    assetType: token.assetType?.name
+                });
+                
+                // Verify all required fields
+                if (!token.id || !token.chainId || !token.address) {
+                    throw new Error(`Invalid token entity: missing required fields`);
+                }
+                
+                // Add to cache
+                tokenCache.set(currencyIdStr, token);
+                await queryRunner.commitTransaction();
+                return token;
+            } catch (error) {
+                await queryRunner.rollbackTransaction();
+                lastError = error as Error;
+                continue;
             }
-            
-            // Log full token details for debugging
-            logger.debug('Retrieved token entity:', {
-                id: token.id,
-                chainId: token.chainId,
-                address: token.address,
-                symbol: token.symbol,
-                assetType: token.assetType?.name
-            });
-            
-            // Verify all required fields
-            if (!token.id || !token.chainId || !token.address) {
-                throw new Error(`Invalid token entity: missing required fields`);
-            }
-            
-            // Add to cache
-            tokenCache.set(currencyIdStr, token);
-            await queryRunner.commitTransaction();
-            return token;
-        } catch (error) {
-            await queryRunner.rollbackTransaction();
-            throw error;
         }
+        
+        throw lastError || new Error(`Failed to upsert token after 3 retries: ${currencyIdStr}`);
         
     } finally {
         await queryRunner.release();
