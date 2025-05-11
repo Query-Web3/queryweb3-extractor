@@ -6,28 +6,28 @@ export class FactTokenDailyStat {
   @PrimaryGeneratedColumn({ type: 'bigint' })
   id: number;
 
-  @Column({ name: 'token_id' })
-  tokenId: number; // 添加name映射
+  @Column({ name: 'token_id', type: 'int', nullable: false })
+  tokenId: number;
 
-  @Column({ type: 'timestamp' })
+  @Column({ name: 'date', type: 'date', nullable: false })
   date: Date;
 
-  @Column({ type: 'decimal', precision: 36, scale: 18 })
+  @Column({ name: 'volume', type: 'decimal', precision: 65, scale: 18, nullable: false })
   volume: number;
 
-  @Column({ name: 'volume_usd', type: 'decimal', precision: 36, scale: 18 })
+  @Column({ name: 'volume_usd', type: 'decimal', precision: 65, scale: 18, nullable: false })
   volumeUsd: number;
 
-  @Column({ name: 'txns_count' })
+  @Column({ name: 'txns_count', type: 'int', nullable: false })
   txnsCount: number;
 
-  @Column({ name: 'price_usd', type: 'decimal', precision: 36, scale: 18 })
+  @Column({ name: 'price_usd', type: 'decimal', precision: 36, scale: 18, nullable: false })
   priceUsd: number;
 
-  @Column({ name: 'volume_yoy', type: 'decimal', precision: 10, scale: 2, nullable: true })
+  @Column({ name: 'volume_yoy', type: 'decimal', precision: 65, scale: 18, nullable: true })
   volumeYoy?: number;
 
-  @Column({ name: 'volume_qoq', type: 'decimal', precision: 10, scale: 2, nullable: true })
+  @Column({ name: 'volume_qoq', type: 'decimal', precision: 65, scale: 18, nullable: true })
   volumeQoq?: number;
 
   @Column({ name: 'txns_yoy', type: 'decimal', precision: 10, scale: 2, nullable: true })

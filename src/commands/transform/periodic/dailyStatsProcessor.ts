@@ -105,10 +105,8 @@ export class DailyStatsProcessor {
                     this.logger.warn(`Skipping token ${token.symbol} - no matching record found in dim_tokens table`);
                     return false;
                 } else {
-                    this.logger.info(`Found ${token.symbol} - ID=${tokenRecord.id}`);
+                    this.logger.info(`Found matching token record for ${token.symbol} - ID=${tokenRecord.id}`);
                 }
-
-                this.logger.debug(`Found matching token record for ${token.symbol}: ID=${tokenRecord.id}`);
 
                 // Calculate txns_qoq based on previous quarter's stats (90 days ago)
                 const prevQuarterDate = new Date(today);
@@ -127,7 +125,7 @@ export class DailyStatsProcessor {
                     ((dailyTxns - prevQuarterStat.txns_count) / prevQuarterStat.txns_count * 100) : 0;
 
                 const statData = {
-                    token_id: tokenRecord.id, // Use the ID from dim_tokens
+                    token_id: tokenRecord.id,
                     date: today,
                     cycle_id: this.repository.dailyCycle?.id,
                     volume: dailyVolume,
@@ -145,15 +143,18 @@ export class DailyStatsProcessor {
                 };
 
                 if (!existingStat) {
-                    this.logger.warn(`Preparing to insert daily stat for ${token.symbol} with data:`, statData);
-                    const result = await this.repository.dailyStatRepo.insert(statData);
-                    this.logger.debug(`Inserted daily stat for ${token.symbol}, result:`, result);
-                    if (!result.identifiers[0]?.id) {
-                        throw new Error(`Failed to insert daily stat record for ${token.symbol} because of missing ID`);
+                    this.logger.debug(`Full stat data for ${token.symbol}:`, JSON.stringify(statData, null, 2));
+                    const entity = this.repository.dailyStatRepo.create(statData);
+                    this.logger.debug(`Created entity for ${token.symbol}:`, entity);
+                    const savedEntity = await this.repository.dailyStatRepo.save(entity);
+                    this.logger.debug(`Saved daily stat for ${token.symbol}:`, savedEntity);
+                    if (!savedEntity?.id) {
+                        throw new Error(`Failed to insert daily stat record for ${token.symbol} because entity was not saved`);
                     }
                 } else if (existingStat.id) {
                     this.logger.warn(`Updating existing daily stat record for ${token.symbol}`, statData);
                     const result = await this.repository.dailyStatRepo.update(existingStat.id, statData);
+                    this.logger.warn(`Inserted daily stat for ${token.symbol}, result:`, result);
                     if (result.affected === 0) {
                         throw new Error(`Failed to update daily stat record for ${token.symbol} because of no affected rows`);
                     }
