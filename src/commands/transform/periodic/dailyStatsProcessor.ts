@@ -19,6 +19,7 @@ export class DailyStatsProcessor {
                     (event.section = 'Homa' AND event.method = 'Minted' AND JSON_EXTRACT(event.data, '$.currencyId') = :tokenAddress) OR
                     (event.section = 'Homa' AND event.method = 'Redeemed' AND JSON_EXTRACT(event.data, '$.currencyId') = :tokenAddress) OR
                     (event.section = 'Rewards' AND event.method = 'Reward' AND JSON_EXTRACT(event.data, '$.currencyId') = :tokenAddress)
+                )
                 `, { tokenAddress: token.address })
                 .getMany();
 
@@ -37,8 +38,16 @@ export class DailyStatsProcessor {
 
             const dailyTxns = events.length;
 
-            // Get token price from oracle (use default 1.0 if not available)
-            const tokenPrice = await getTokenPriceFromOracle(token.address) ?? 1.0;
+            // Get token price from oracle (use default 1.0 if not available or fails)
+            let tokenPrice = 1.0;
+            try {
+                const price = await getTokenPriceFromOracle(token.address);
+                if (price !== null && price !== undefined) {
+                    tokenPrice = price;
+                }
+            } catch (error) {
+                this.logger.warn(`Failed to get price for token ${token.symbol}, using default 1.0`, error as Error);
+            }
             
             const today = new Date();
             today.setHours(0, 0, 0, 0);
@@ -72,29 +81,40 @@ export class DailyStatsProcessor {
                 where: { tokenId: token.id, date: today }
             });
 
-            const statData = {
-                token_id: token.id,
-                date: today,
-                cycle_id: this.repository.dailyCycle?.id,
-                volume: dailyVolume,
-                volume_usd: dailyVolume * tokenPrice,
-                txns_count: dailyTxns,
-                price_usd: tokenPrice,
-                volume_yoy: volumeYoY,
-                volume_qoq: volumeQoQ,
-                txns_yoy: txnsYoY,
-                volume_wow: prevWeekStat ?
-                    ((dailyVolume - prevWeekStat.volume) / prevWeekStat.volume * 100) : 0,
-                volume_mom: prevMonthStat ?
-                    ((dailyVolume - prevMonthStat.volume) / prevMonthStat.volume * 100) : 0
-            };
+            if (!token.id) {
+                throw new Error(`Token ID is missing for ${token.symbol}`);
+            }
 
-            if (!existingStat) {
-                this.logger.debug(`Inserting new daily stat record for ${token.symbol}`, statData);
-                await this.repository.dailyStatRepo.insert(statData);
-            } else {
-                this.logger.debug(`Updating existing daily stat record for ${token.symbol}`, statData);
-                await this.repository.dailyStatRepo.update(existingStat.id, statData);
+            try {
+                const statData = {
+                    token_id: token.id,
+                    date: today,
+                    cycle_id: this.repository.dailyCycle?.id,
+                    volume: dailyVolume,
+                    volume_usd: dailyVolume * tokenPrice,
+                    txns_count: dailyTxns,
+                    price_usd: tokenPrice,
+                    volume_yoy: volumeYoY,
+                    volume_qoq: volumeQoQ,
+                    txns_yoy: txnsYoY,
+                    volume_wow: prevWeekStat ?
+                        ((dailyVolume - prevWeekStat.volume) / prevWeekStat.volume * 100) : 0,
+                    volume_mom: prevMonthStat ?
+                        ((dailyVolume - prevMonthStat.volume) / prevMonthStat.volume * 100) : 0
+                };
+
+                if (!existingStat) {
+                    this.logger.debug(`Inserting new daily stat record for ${token.symbol}`, statData);
+                    await this.repository.dailyStatRepo.insert(statData);
+                } else if (existingStat.id) {
+                    this.logger.debug(`Updating existing daily stat record for ${token.symbol}`, statData);
+                    await this.repository.dailyStatRepo.update(existingStat.id, statData);
+                } else {
+                    throw new Error(`Existing stat record has no ID for ${token.symbol}`);
+                }
+            } catch (error) {
+                this.logger.error(`Failed to save daily stats for token ${token.symbol}`, error as Error);
+                throw error;
             }
 
             tokenTimer.end();
