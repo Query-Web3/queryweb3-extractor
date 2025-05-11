@@ -7,6 +7,7 @@ import { getConcurrencySettings, splitIntoChunks, processChunk } from './paralle
 import { checkAndAcquireLock, releaseLock } from './lockManager';
 import { determineBlockRange } from './blockRange';
 import { createApiConnection } from '../common/apiConnector';
+import { Logger, LogLevel } from '../../utils/logger';
 
 export interface ProcessResult {
     processedCount: number;
@@ -14,12 +15,16 @@ export interface ProcessResult {
 }
 
 export async function processBlocks(
-    batchLog: {id: number, batchId: string}, 
+    batchLog: BatchLog, 
     startBlock?: number, 
     endBlock?: number
 ): Promise<ProcessResult> {
+    const logger = Logger.getInstance();
+    logger.setLogLevel(process.env.LOG_LEVEL as LogLevel || LogLevel.INFO);
+    logger.setBatchLog(batchLog);
+    
     const batchId = batchLog.batchId;
-    console.log(`Starting batch with ID: ${batchId}`);
+    logger.info(`Starting batch with ID: ${batchId}`);
 
     let processedCount = 0;
     const dataSource = await initializeDataSource();
@@ -74,7 +79,11 @@ export async function processBlocks(
                 blocksToProcess[blocksToProcess.length - 1].number : null
         };
     } catch (e) {
-        console.error('Error processing blocks:', e);
+        if (e instanceof Error) {
+            logger.error('Error processing blocks', e);
+        } else {
+            logger.error('Error processing blocks', new Error(String(e)));
+        }
         await releaseLock(dataSource, batchId, false);
         throw e;
     } finally {
@@ -91,28 +100,28 @@ async function collectBlocksToProcess(
     endBlock: number,
     isHistorical: boolean
 ) {
+    const logger = Logger.getInstance();
     const blocksToProcess = [];
     
     if (isHistorical) {
         const totalBlocks = endBlock - startBlock + 1;
-        console.log(`Total blocks to process: ${totalBlocks}`);
+        logger.info(`Total blocks to process: ${totalBlocks}`);
         
         if (totalBlocks > 100) {
             const batchSize = 100;
             const totalBatches = Math.ceil(totalBlocks / batchSize);
-            console.log(`Processing ${totalBlocks} blocks in ${totalBatches} batches`);
+            logger.info(`Processing ${totalBlocks} blocks in ${totalBatches} batches`);
             
             for (let batchNum = 0; batchNum < totalBatches; batchNum++) {
                 const batchStart = startBlock + (batchNum * batchSize);
                 const batchEnd = Math.min(batchStart + batchSize - 1, endBlock);
-                console.log(`Processing batch ${batchNum + 1}/${totalBatches}: blocks ${batchStart} to ${batchEnd}`);
+                logger.info(`Processing batch ${batchNum + 1}/${totalBatches}: blocks ${batchStart} to ${batchEnd}`);
                 
                 let currentBatchStart = batchStart;
                 while (currentBatchStart <= batchEnd) {
                     const currentBatchEnd = Math.min(currentBatchStart + batchSize - 1, batchEnd);
-                    console.log(`Processing blocks ${currentBatchStart} to ${currentBatchEnd}`);
-                    const batchStartTime = Date.now();
-                    console.log(`Batch ${batchNum + 1}/${totalBatches} started at: ${new Date(batchStartTime).toISOString()}`);
+                    logger.info(`Processing blocks ${currentBatchStart} to ${currentBatchEnd}`);
+                    const batchTimer = logger.time(`Batch ${batchNum + 1}/${totalBatches}`);
                     
                     for (let blockNumber = currentBatchStart; blockNumber <= currentBatchEnd; blockNumber++) {
                         try {
@@ -131,10 +140,14 @@ async function collectBlocksToProcess(
                                     hashObj: blockHash
                                 });
                             } else {
-                                console.log(`Skipping existing block ${blockNumber}`);
+                                logger.debug(`Skipping existing block ${blockNumber}`);
                             }
                         } catch (e) {
-                            console.error(`Error processing block ${blockNumber}:`, e);
+                            if (e instanceof Error) {
+                                logger.error(`Error processing block ${blockNumber}`, e);
+                            } else {
+                                logger.error(`Error processing block ${blockNumber}`, new Error(String(e)));
+                            }
                             continue;
                         }
                     }
