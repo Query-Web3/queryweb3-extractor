@@ -18,12 +18,6 @@ export class DimChain {
   @Column({ name: 'updated_at', type: 'timestamp', default: () => 'CURRENT_TIMESTAMP', onUpdate: 'CURRENT_TIMESTAMP' })
   updatedAt: Date;
 
-  @Column({ name: 'latest_block', type: 'int', nullable: true })
-  latestBlock: number;
-
-  @Column({ name: 'latest_block_time', type: 'timestamp', nullable: true })
-  latestBlockTime: Date;
-
   @OneToMany(() => DimToken, (token) => token.chain)
   tokens: DimToken[];
 }

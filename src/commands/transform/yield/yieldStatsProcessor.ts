@@ -77,7 +77,7 @@ export async function processYieldStats() {
                 sum + parseFloat(e.data?.amount || '0'), 0
             );
 
-            const tokenPrice = token.priceUsd ?? await getTokenPriceFromOracle(token.address) ?? 1.0;
+            const tokenPrice = await getTokenPriceFromOracle(token.address) ?? 1.0;
             const tvlUsd = tvl * tokenPrice;
             const apy = tvl > 0 ? (dailyRewards * 365 / tvl * 100) : 0;
             const poolAddress = await getCachedPoolAddress(token.address);

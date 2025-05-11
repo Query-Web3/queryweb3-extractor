@@ -42,8 +42,8 @@ export class WeeklyStatsProcessor {
 
             const weeklyTxns = weeklyEvents.length;
 
-            // Get token price from oracle or use default 1.0 if not available
-            const tokenPrice = token.priceUsd ?? await getTokenPriceFromOracle(token.address) ?? 1.0;
+            // Get token price from oracle (use default 1.0 if not available)
+            const tokenPrice = await getTokenPriceFromOracle(token.address) ?? 1.0;
 
             // Get previous stats for comparisons
             const prevWeekStat = await this.repository.weeklyStatRepo.findOne({ 

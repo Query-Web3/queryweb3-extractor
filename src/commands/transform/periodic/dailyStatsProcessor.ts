@@ -37,8 +37,8 @@ export class DailyStatsProcessor {
 
             const dailyTxns = events.length;
 
-            // Get token price from oracle or use default 1.0 if not available
-            const tokenPrice = token.priceUsd ?? await getTokenPriceFromOracle(token.address) ?? 1.0;
+            // Get token price from oracle (use default 1.0 if not available)
+            const tokenPrice = await getTokenPriceFromOracle(token.address) ?? 1.0;
             
             const today = new Date();
             today.setHours(0, 0, 0, 0);

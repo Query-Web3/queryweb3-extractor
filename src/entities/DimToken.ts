@@ -27,9 +27,6 @@ export class DimToken {
   @Column()
   decimals: number;
 
-  @Column({ name: 'price_usd', type: 'decimal', precision: 36, scale: 18, nullable: true })
-  priceUsd: number;
-
   @Column({ name: 'asset_type_id' })
   assetTypeId: number; // 与SQL表结构一致
 
