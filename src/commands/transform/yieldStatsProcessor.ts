@@ -20,76 +20,89 @@ async function getPoolAddressFromChain(tokenAddress: string): Promise<string> {
 
 export async function processYieldStats() {
     const dataSource = await initializeDataSource();
-    const tokenRepo = dataSource.getRepository(DimToken);
-    const returnTypeRepo = dataSource.getRepository(DimReturnType);
-    const yieldStatRepo = dataSource.getRepository(FactYieldStat);
-    const eventRepo = dataSource.getRepository(Event);
-    const statCycleRepo = dataSource.getRepository(DimStatCycle);
-    
-    const tokens = await tokenRepo.find();
-    const returnTypes = await returnTypeRepo.find();
-    const dailyCycle = await statCycleRepo.findOne({ where: { name: 'Daily' } });
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const queryRunner = dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
 
-    for (const token of tokens) {
-        for (const returnType of returnTypes) {
-            // Calculate APY based on reward events
-            const rewardEvents = await eventRepo.find({
-                where: {
-                    section: 'Rewards',
-                    method: 'Reward',
-                    data: { currencyId: token.address }
-                }
-            });
+    try {
+        const tokenRepo = queryRunner.manager.getRepository(DimToken);
+        const returnTypeRepo = queryRunner.manager.getRepository(DimReturnType);
+        const yieldStatRepo = queryRunner.manager.getRepository(FactYieldStat);
+        const eventRepo = queryRunner.manager.getRepository(Event);
+        const statCycleRepo = queryRunner.manager.getRepository(DimStatCycle);
+        
+        // Preload all necessary data
+        const [tokens, returnTypes, dailyCycle] = await Promise.all([
+            tokenRepo.find(),
+            returnTypeRepo.find(),
+            statCycleRepo.findOne({ where: { name: 'Daily' } })
+        ]);
+        
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
 
-            // Calculate TVL based on transfer and deposit events
-            const transferEvents = await eventRepo.find({
-                where: [
-                    { section: 'Tokens', method: 'Transfer', data: { currencyId: token.address } },
-                    { section: 'Balances', method: 'Transfer', data: { currencyId: token.address } }
-                ]
-            });
+        // Batch fetch all reward and transfer events
+        const rewardEvents = await eventRepo.find({
+            where: { section: 'Rewards', method: 'Reward' }
+        });
+        const transferEvents = await eventRepo.find({
+            where: [
+                { section: 'Tokens', method: 'Transfer' },
+                { section: 'Balances', method: 'Transfer' }
+            ]
+        });
 
-            // Calculate daily rewards
-            const dailyRewards = rewardEvents.reduce((sum, event) => {
-                return sum + parseFloat(event.data.amount || '0');
-            }, 0);
+        // Cache pool addresses to avoid repeated chain queries
+        const poolAddressCache = new Map<string, string>();
+        const getCachedPoolAddress = async (tokenAddress: string) => {
+            if (!poolAddressCache.has(tokenAddress)) {
+                poolAddressCache.set(tokenAddress, await getPoolAddressFromChain(tokenAddress));
+            }
+            return poolAddressCache.get(tokenAddress)!;
+        };
 
-            // Calculate TVL
-            const tvl = transferEvents.reduce((sum, event) => {
-                return sum + parseFloat(event.data.amount || '0');
-            }, 0);
+        // Process tokens in parallel
+        await Promise.all(tokens.map(async token => {
+            const tokenRewards = rewardEvents.filter(e => 
+                e.data?.currencyId === token.address
+            );
+            const tokenTransfers = transferEvents.filter(e => 
+                e.data?.currencyId === token.address
+            );
 
-            // Calculate APY (simplified: daily rewards * 365 / TVL)
-            const apy = tvl > 0 ? (dailyRewards * 365 / tvl * 100) : 0;
+            const dailyRewards = tokenRewards.reduce((sum, e) => 
+                sum + parseFloat(e.data?.amount || '0'), 0
+            );
+            const tvl = tokenTransfers.reduce((sum, e) => 
+                sum + parseFloat(e.data?.amount || '0'), 0
+            );
+
             const tokenPrice = token.priceUsd ?? await getTokenPriceFromOracle(token.address) ?? 1.0;
             const tvlUsd = tvl * tokenPrice;
+            const apy = tvl > 0 ? (dailyRewards * 365 / tvl * 100) : 0;
+            const poolAddress = await getCachedPoolAddress(token.address);
 
-            const existingStat = await yieldStatRepo.findOne({
-                where: {
-                    tokenId: token.id,
-                    returnTypeId: returnType.id,
-                    date: today
-                }
-            });
-
-            const statData = {
+            // Batch process return types
+            const statUpdates = returnTypes.map(returnType => ({
                 tokenId: token.id,
                 returnTypeId: returnType.id,
                 cycleId: dailyCycle?.id,
-                poolAddress: await getPoolAddressFromChain(token.address),
+                poolAddress,
                 date: today,
                 apy,
                 tvl,
                 tvlUsd
-            };
+            }));
 
-            if (!existingStat) {
-                await yieldStatRepo.insert(statData);
-            } else {
-                await yieldStatRepo.update(existingStat.id, statData);
-            }
-        }
+            // Bulk upsert stats
+            await yieldStatRepo.upsert(statUpdates, ['tokenId', 'returnTypeId', 'date']);
+        }));
+
+        await queryRunner.commitTransaction();
+    } catch (e) {
+        await queryRunner.rollbackTransaction();
+        throw e;
+    } finally {
+        await queryRunner.release();
     }
 }

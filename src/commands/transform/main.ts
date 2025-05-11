@@ -61,6 +61,10 @@ export async function transformData(batchLog?: BatchLog) {
             logger.info(`Processing latest block #${latestBlock.number} (batchId: ${latestBlock.batchId})`);
             blockTimer.end();
 
+            // Batch collect all token IDs that need processing
+            const tokenIds = new Set<string>();
+            
+            // Process extrinsics
             const methodsToProcess = [
                 'tokens.transfer',
                 'dex.swapWithExactSupply',
@@ -70,47 +74,37 @@ export async function transformData(batchLog?: BatchLog) {
             ];
 
             const processTimer = logger.time('Process extrinsics');
-            for (const method of methodsToProcess) {
-                const methodTimer = logger.time(`Process ${method}`);
-                logger.debug(`Processing method: ${method}`);
-                
-                const extrinsics = await dataSource.getRepository(Extrinsic)
-                    .createQueryBuilder('extrinsic')
-                    .where('extrinsic.method = :method', { method })
-                    .groupBy('extrinsic.params')
-                    .getMany();
+            const extrinsics = await dataSource.getRepository(Extrinsic)
+                .createQueryBuilder('extrinsic')
+                .where('extrinsic.method IN (:...methods)', { methods: methodsToProcess })
+                .groupBy('extrinsic.params')
+                .getMany();
 
-                logger.info(`Found ${extrinsics.length} extrinsics for method ${method}`);
-                
-                for (const extrinsic of extrinsics) {
-                    try {
-                        if (method.startsWith('tokens.')) {
-                            const params = extrinsic.params as any;
-                            if (params?.currencyId) {
-                                await upsertToken(params.currencyId);
-                            }
-                        } else if (method.startsWith('dex.')) {
-                            const params = extrinsic.params as any;
-                            if (params?.path) {
-                                for (const currencyId of params.path) {
-                                    await upsertToken(currencyId);
-                                }
-                            }
-                        } else if (method.startsWith('homa.')) {
-                            await upsertToken('ACA');
+            for (const extrinsic of extrinsics) {
+                try {
+                    const method = extrinsic.method;
+                    const params = extrinsic.params as any;
+                    
+                    if (method.startsWith('tokens.') && params?.currencyId) {
+                        tokenIds.add(params.currencyId);
+                    } else if (method.startsWith('dex.') && params?.path) {
+                        for (const currencyId of params.path) {
+                            tokenIds.add(currencyId);
                         }
-                    } catch (e) {
-                        logger.error(`Failed to process ${method} extrinsic`, e as Error, {
-                            extrinsicId: extrinsic.id,
-                            method,
-                            params: extrinsic.params
-                        });
+                    } else if (method.startsWith('homa.')) {
+                        tokenIds.add('ACA');
                     }
+                } catch (e) {
+                    logger.error(`Failed to process extrinsic`, e as Error, {
+                        extrinsicId: extrinsic.id,
+                        method: extrinsic.method,
+                        params: extrinsic.params
+                    });
                 }
-                methodTimer.end();
             }
             processTimer.end();
 
+            // Process events
             const eventPatterns = [
                 { section: 'tokens', method: 'transfer' },
                 { section: 'dex', method: 'swap' },
@@ -120,39 +114,42 @@ export async function transformData(batchLog?: BatchLog) {
             ];
 
             const eventTimer = logger.time('Process events');
-            for (const pattern of eventPatterns) {
-                const patternTimer = logger.time(`Process ${pattern.section}.${pattern.method}`);
-                logger.debug(`Querying events matching ${pattern.section}.${pattern.method}...`);
-                
-                const events = await dataSource.getRepository(Event)
-                    .createQueryBuilder('event')
-                    .where('LOWER(event.section) = LOWER(:section) AND LOWER(event.method) = LOWER(:method)', {
-                        section: pattern.section,
-                        method: pattern.method
-                    })
-                    .groupBy('event.data')
-                    .getMany();
-                
-                logger.info(`Found ${events.length} events matching ${pattern.section}.${pattern.method}`);
+            const events = await dataSource.getRepository(Event)
+                .createQueryBuilder('event')
+                .where('LOWER(event.section) IN (:...sections) AND LOWER(event.method) IN (:...methods)', {
+                    sections: eventPatterns.map(p => p.section.toLowerCase()),
+                    methods: eventPatterns.map(p => p.method.toLowerCase())
+                })
+                .groupBy('event.data')
+                .getMany();
 
-                for (const event of events) {
-                    try {
-                        const data = event.data as any;
-                        if (data?.currencyId) {
-                            await upsertToken(data.currencyId);
-                        }
-                    } catch (e) {
-                        logger.error(`Failed to process ${pattern.section}.${pattern.method} event`, e as Error, {
-                            eventId: event.id,
-                            section: pattern.section,
-                            method: pattern.method,
-                            data: event.data
-                        });
+            for (const event of events) {
+                try {
+                    const data = event.data as any;
+                    if (data?.currencyId) {
+                        tokenIds.add(data.currencyId);
                     }
+                } catch (e) {
+                    logger.error(`Failed to process event`, e as Error, {
+                        eventId: event.id,
+                        section: event.section,
+                        method: event.method,
+                        data: event.data
+                    });
                 }
-                patternTimer.end();
             }
             eventTimer.end();
+
+            // Batch process all unique tokens
+            if (tokenIds.size > 0) {
+                const tokenTimer = logger.time('Batch process tokens');
+                await Promise.all(Array.from(tokenIds).map(tokenId => 
+                    upsertToken(tokenId).catch(e => 
+                        logger.error(`Failed to process token ${tokenId}`, e as Error)
+                    )
+                ));
+                tokenTimer.end();
+            }
 
             const statsTimer = logger.time('Process stats');
             await initializeDimensionTables();

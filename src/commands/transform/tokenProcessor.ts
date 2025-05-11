@@ -6,100 +6,96 @@ import { DimStatCycle } from '../../entities/DimStatCycle';
 import { initializeDataSource } from './dataSource';
 import { Logger, LogLevel } from '../../utils/logger';
 
+// Cache for processed tokens to avoid repeated database operations
+const tokenCache = new Map<string, DimToken>();
+
 export async function upsertToken(currencyId: any) {
     const logger = Logger.getInstance();
     logger.setLogLevel(process.env.LOG_LEVEL as LogLevel || LogLevel.INFO);
     
     const tokenTimer = logger.time('Upsert token');
     const dataSource = await initializeDataSource();
-    const assetTypeRepo = dataSource.getRepository(DimAssetType);
-    const tokenRepo = dataSource.getRepository(DimToken);
+    const queryRunner = dataSource.createQueryRunner();
+    await queryRunner.connect();
     
-    logger.debug('Processing token', { currencyId });
-    
-    // Handle object input by extracting relevant fields or stringifying
-    let currencyIdStr: string;
-    let symbol: string;
-    let name: string;
-    
-    if (typeof currencyId === 'object' && currencyId !== null) {
-        currencyIdStr = currencyId.address || currencyId.id || JSON.stringify(currencyId);
-        symbol = currencyId.symbol || currencyIdStr.slice(0, 20);
-        name = currencyId.name || currencyIdStr.slice(0, 100);
-    } else {
-        currencyIdStr = String(currencyId);
-        symbol = currencyIdStr;
-        name = currencyIdStr;
-    }
-    
-    // Determine token type and metadata
-    let assetTypeName = 'Native';
-    let decimals = 12; // Default for most Substrate chains
-    
-    if (currencyIdStr.startsWith('LP-')) {
-        assetTypeName = 'LP Token';
-        symbol = 'LP-' + currencyIdStr.split('-')[1].slice(0, 15);
-        name = 'Liquidity Pool ' + currencyIdStr.split('-')[1];
-    } else if (currencyIdStr === 'AUSD') {
-        assetTypeName = 'Stablecoin';
-        symbol = 'AUSD';
-        name = 'Acala Dollar';
-        decimals = 12;
-    } else if (currencyIdStr === 'ACA') {
-        symbol = 'ACA';
-        name = 'Acala';
-        decimals = 12;
-    }
-
-    // Get or create asset type
-    let assetType = await assetTypeRepo.findOne({ where: { name: assetTypeName } });
-    if (!assetType) {
-        assetType = await assetTypeRepo.save({
-            name: assetTypeName,
-            description: assetTypeName === 'LP Token' ? 'Liquidity Pool Token' : 'Native Token'
-        });
-    }
-
-    // Get or create token
-    let token = await tokenRepo.findOne({
-        where: {
-            chainId: 1,
-            address: currencyIdStr
+    try {
+        const assetTypeRepo = queryRunner.manager.getRepository(DimAssetType);
+        const tokenRepo = queryRunner.manager.getRepository(DimToken);
+        
+        // Handle object input by extracting relevant fields or stringifying
+        let currencyIdStr: string;
+        let symbol: string;
+        let name: string;
+        
+        if (typeof currencyId === 'object' && currencyId !== null) {
+            currencyIdStr = currencyId.address || currencyId.id || JSON.stringify(currencyId);
+            symbol = currencyId.symbol || currencyIdStr.slice(0, 20);
+            name = currencyId.name || currencyIdStr.slice(0, 100);
+        } else {
+            currencyIdStr = String(currencyId);
+            symbol = currencyIdStr;
+            name = currencyIdStr;
         }
-    });
+        
+        // Check cache first
+        if (tokenCache.has(currencyIdStr)) {
+            return tokenCache.get(currencyIdStr)!;
+        }
 
-    logger.debug(`Processing token ${currencyIdStr}, found existing: ${!!token}`);
-    
-    if (!token) {
-        token = await tokenRepo.save({
+        // Determine token type and metadata
+        let assetTypeName = 'Native';
+        let decimals = 12; // Default for most Substrate chains
+        
+        if (currencyIdStr.startsWith('LP-')) {
+            assetTypeName = 'LP Token';
+            symbol = 'LP-' + currencyIdStr.split('-')[1].slice(0, 15);
+            name = 'Liquidity Pool ' + currencyIdStr.split('-')[1];
+        } else if (currencyIdStr === 'AUSD') {
+            assetTypeName = 'Stablecoin';
+            symbol = 'AUSD';
+            name = 'Acala Dollar';
+            decimals = 12;
+        } else if (currencyIdStr === 'ACA') {
+            symbol = 'ACA';
+            name = 'Acala';
+            decimals = 12;
+        }
+
+        // Get or create asset type
+        let assetType = await assetTypeRepo.findOne({ where: { name: assetTypeName } });
+        if (!assetType) {
+            assetType = await assetTypeRepo.save({
+                name: assetTypeName,
+                description: assetTypeName === 'LP Token' ? 'Liquidity Pool Token' : 'Native Token'
+            });
+        }
+
+        // Prepare token data
+        const tokenData = {
             chainId: 1,
             address: currencyIdStr,
             symbol: symbol.slice(0, 20),
             name: name.slice(0, 100),
             decimals: decimals,
             assetTypeId: assetType!.id,
-            createdAt: new Date(),
             updatedAt: new Date()
-        });
-    } else {
-        // Update existing token if needed
-        await tokenRepo.update(token.id, {
-            symbol: symbol.slice(0, 20),
-            name: name.slice(0, 100),
-            decimals: decimals,
-            assetTypeId: assetType!.id,
-            updatedAt: new Date()
-        });
+        };
+
+        // Upsert token
+        const result = await tokenRepo.upsert(tokenData, ['chainId', 'address']);
+        const token = Array.isArray(result.identifiers) ? 
+            result.identifiers[0] as DimToken : 
+            result.identifiers as DimToken;
+        
+        // Add to cache
+        tokenCache.set(currencyIdStr, token);
+        
+        logger.info(`Token ${symbol} (${currencyIdStr}) processed`);
+        return token;
+    } finally {
+        await queryRunner.release();
+        tokenTimer.end();
     }
-    
-    if (token) {
-        logger.info(`Token ${token.symbol} (${token.address}) processed`);
-    } else {
-        logger.error(`Failed to process token ${currencyIdStr}`);
-    }
-    
-    tokenTimer.end();
-    return token;
 }
 
 export async function initializeDimensionTables() {
