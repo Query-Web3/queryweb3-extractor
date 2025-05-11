@@ -144,15 +144,10 @@ export class DailyStatsProcessor {
                         ((dailyVolume - prevMonthStat.volume) / prevMonthStat.volume * 100) : 0
                 };
 
-                this.logger.debug('Stat Data:', statData);
-
                 if (!existingStat) {
-                    this.logger.warn(`Inserting new daily stat record for ${token.symbol}`, {
-                        ...statData,
-                        token_symbol: tokenRecord.symbol,
-                        token_address: tokenRecord.address
-                    });
+                    this.logger.warn(`Preparing to insert daily stat for ${token.symbol} with data:`, statData);
                     const result = await this.repository.dailyStatRepo.insert(statData);
+                    this.logger.debug(`Inserted daily stat for ${token.symbol}, result:`, result);
                     if (!result.identifiers[0]?.id) {
                         throw new Error(`Failed to insert daily stat record for ${token.symbol} because of missing ID`);
                     }
