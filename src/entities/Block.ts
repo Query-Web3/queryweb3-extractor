@@ -19,7 +19,7 @@ export class Block {
   @Column()
   batchId: string;
 
-  @Column({ type: 'json', nullable: true })
+  @Column({ name: 'acala_data', type: 'json', nullable: true })
   acalaData: {
     dexPools: Array<{
       poolId: string;
