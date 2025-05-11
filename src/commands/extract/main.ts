@@ -3,6 +3,7 @@ import { determineBlockRange } from './blockRange';
 import { BatchLog, BatchStatus, BatchType } from '../../entities/BatchLog';
 import { showLastBatchLog, pauseBatch, resumeBatch } from '../common/batchLog';
 import { initializeDataSource } from './dataSource';
+import { Logger } from '../../utils/logger';
 
 export async function extractData(
     batchLog?: BatchLog | null,
@@ -10,6 +11,8 @@ export async function extractData(
     endBlock?: number,
     timeRange?: string
 ): Promise<{processedCount: number, lastProcessedHeight: number | null}> {
+    const logger = Logger.getInstance();
+    const startTime = Date.now();
     if (!batchLog) {
         const dataSource = await initializeDataSource();
         const batchLogRepo = dataSource.getRepository(BatchLog);
@@ -31,7 +34,10 @@ export async function extractData(
         endBlock = range.endBlock;
     }
     
-    return processBlocks(batchLog, startBlock, endBlock);
+    const result = await processBlocks(batchLog, startBlock, endBlock);
+    const totalTime = Date.now() - startTime;
+    logger.info(`Extract completed in ${(totalTime / 1000).toFixed(2)} seconds`);
+    return result;
 }
 
 export const showLastExtractBatchLog = () => showLastBatchLog(BatchType.EXTRACT);
