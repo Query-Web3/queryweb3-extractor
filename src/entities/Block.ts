@@ -19,6 +19,18 @@ export class Block {
   @Column()
   batchId: string;
 
+  @Column({ type: 'jsonb', nullable: true })
+  acalaData: {
+    dexPools: Array<{
+      poolId: string;
+      liquidity: string;
+    }>;
+    stableCoinBalances: Array<{
+      accountId: string;
+      position: string;
+    }>;
+  } | null;
+
   @OneToMany(() => Extrinsic, (extrinsic) => extrinsic.block)
   extrinsics: Extrinsic[];
 

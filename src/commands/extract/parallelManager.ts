@@ -39,6 +39,16 @@ export async function processChunk(
         hash: string;
         header: any;
         hashObj: any;
+        acalaData?: {
+            dexPools: Array<{
+                poolId: string;
+                liquidity: string;
+            }>;
+            stableCoinBalances: Array<{
+                accountId: string;
+                position: string;
+            }>;
+        };
     }>,
     api: any,
     batchId: string

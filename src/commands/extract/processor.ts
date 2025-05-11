@@ -179,6 +179,11 @@ async function collectBlocksToProcess(
                             // Get the block header for the current block hash
                             const header = await api.rpc.chain.getHeader(blockHash);
                             
+                            // Additional Acala-specific data extraction
+                            const apiAt = await api.at(blockHash);
+                            const dexPools = await apiAt.query.dex.liquidityPool.entries();
+                            const stableCoinBalances = await apiAt.query.honzon.totalPositions.entries();
+                            
                             // Check if the block already exists in the database
                             const existingBlock = await dataSource.getRepository(Block).findOne({
                                 where: { number: blockNumber }
@@ -190,7 +195,17 @@ async function collectBlocksToProcess(
                                     number: blockNumber,
                                     hash: blockHash.toString(),
                                     header,
-                                    hashObj: blockHash
+                                    hashObj: blockHash,
+                                    acalaData: {
+                                        dexPools: dexPools.map(([key, value]) => ({
+                                            poolId: key.args[0].toString(),
+                                            liquidity: value.toString()
+                                        })),
+                                        stableCoinBalances: stableCoinBalances.map(([key, value]) => ({
+                                            accountId: key.args[0].toString(),
+                                            position: value.toString()
+                                        }))
+                                    }
                                 });
                             } else {
                                 // Log that the block is being skipped because it already exists

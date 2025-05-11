@@ -26,6 +26,16 @@ export async function processBlock(
         number: number;
         hash: string;
         hashObj: any;
+        acalaData?: {
+            dexPools: Array<{
+                poolId: string;
+                liquidity: string;
+            }>;
+            stableCoinBalances: Array<{
+                accountId: string;
+                position: string;
+            }>;
+        };
     },
     workerId: number,
     api: ApiPromise,
@@ -114,7 +124,8 @@ export async function processBlock(
             const blockRecord = await queryRunner.manager.getRepository(Block).save({
                 number: block.number,
                 hash: block.hash,
-                batchId
+                batchId,
+                acalaData: block.acalaData || null
             });
             
             if (extrinsics.length > 0) {

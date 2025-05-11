@@ -34,6 +34,7 @@ CREATE TABLE IF NOT EXISTS `acala_block` (
   `hash` varchar(191) NOT NULL,
   `timestamp` datetime(3) NOT NULL DEFAULT current_timestamp(3),
   `batchId` char(36) NOT NULL,
+  `acala_data` json DEFAULT NULL,
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=1 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
