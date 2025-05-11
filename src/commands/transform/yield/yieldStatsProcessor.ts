@@ -75,21 +75,23 @@ export async function processYieldStats() {
 
         // Process tokens in parallel
         await Promise.all(tokens.map(async token => {
-            const tokenRewards = rewardEvents.filter(e => 
-                e.data?.currencyId === token.address || 
-                (e.data && JSON.parse(e.data).currencyId === token.address)
-            );
-            const tokenTransfers = transferEvents.filter(e => 
-                e.data?.currencyId === token.address ||
-                (e.data && JSON.parse(e.data).currencyId === token.address)
-            );
+            const tokenRewards = rewardEvents.filter(e => {
+                const data = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
+                return data?.currencyId === token.address;
+            });
+            const tokenTransfers = transferEvents.filter(e => {
+                const data = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
+                return data?.currencyId === token.address;
+            });
 
-            const dailyRewards = tokenRewards.reduce((sum, e) => 
-                sum + parseFloat(e.data?.amount || '0'), 0
-            );
-            const tvl = tokenTransfers.reduce((sum, e) => 
-                sum + parseFloat(e.data?.amount || '0'), 0
-            );
+            const dailyRewards = tokenRewards.reduce((sum, e) => {
+                const data = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
+                return sum + parseFloat(data?.amount || '0');
+            }, 0);
+            const tvl = tokenTransfers.reduce((sum, e) => {
+                const data = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
+                return sum + parseFloat(data?.amount || '0');
+            }, 0);
 
             const tokenPrice = await getTokenPriceFromOracle(token.address) ?? 1.0;
             const tvlUsd = tvl * tokenPrice;
