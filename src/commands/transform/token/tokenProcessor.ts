@@ -22,16 +22,35 @@ export async function upsertToken(currencyId: any) {
         const assetTypeRepo = queryRunner.manager.getRepository(DimAssetType);
         const tokenRepo = queryRunner.manager.getRepository(DimToken);
         
-        // Handle object input by extracting relevant fields or stringifying
+        // Handle currencyId input - extract actual token address
         let currencyIdStr: string;
         let symbol: string;
         let name: string;
         
         if (typeof currencyId === 'object' && currencyId !== null) {
-            currencyIdStr = currencyId.address || currencyId.id || JSON.stringify(currencyId);
-            symbol = currencyId.symbol || currencyIdStr.slice(0, 20);
-            name = currencyId.name || currencyIdStr.slice(0, 100);
+            // Handle ForeignAsset format
+            if (currencyId.ForeignAsset) {
+                currencyIdStr = `ForeignAsset-${currencyId.ForeignAsset}`;
+                symbol = currencyId.symbol || `FA${currencyId.ForeignAsset}`;
+                name = currencyId.name || `Foreign Asset ${currencyId.ForeignAsset}`;
+            } 
+            // Handle Token format
+            else if (currencyId.Token) {
+                currencyIdStr = `Token-${currencyId.Token}`;
+                symbol = currencyId.symbol || currencyId.Token;
+                name = currencyId.name || `Token ${currencyId.Token}`;
+            }
+            // Handle plain address
+            else {
+                currencyIdStr = currencyId.address || currencyId.id;
+                if (!currencyIdStr) {
+                    throw new Error('Invalid currencyId object - missing address/id');
+                }
+                symbol = currencyId.symbol || currencyIdStr.slice(0, 20);
+                name = currencyId.name || currencyIdStr.slice(0, 100);
+            }
         } else {
+            // Handle string/number input
             currencyIdStr = String(currencyId);
             symbol = currencyIdStr;
             name = currencyIdStr;
@@ -78,16 +97,21 @@ export async function upsertToken(currencyId: any) {
             }
         }
 
-        // Prepare token data
+        // Prepare token data with standardized address format
         const tokenData = {
             chainId: 1,
-            address: currencyIdStr,
+            address: currencyIdStr.replace(/[^a-zA-Z0-9-]/g, ''), // Sanitize address
             symbol: symbol.slice(0, 20),
             name: name.slice(0, 100),
             decimals: decimals,
             assetTypeId: assetType!.id,
             updatedAt: new Date()
         };
+
+        // Validate address format
+        if (!tokenData.address || tokenData.address.length > 100) {
+            throw new Error(`Invalid token address format: ${tokenData.address}`);
+        }
 
         // Upsert token and get full entity
         await tokenRepo.upsert(tokenData, ['chainId', 'address']);
