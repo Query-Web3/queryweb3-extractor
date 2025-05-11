@@ -11,16 +11,16 @@ export class DailyStatsProcessor {
         this.logger.info(`Processing daily stats for token ${token.symbol} (${token.address})`);
         
         try {
-            const events = await this.repository.eventRepo.find({
-                where: [
-                    { section: 'Tokens', method: 'Transfer', data: { currencyId: token.address } },
-                    { section: 'Balances', method: 'Transfer', data: { currencyId: token.address } },
-                    { section: 'Dex', method: 'Swap', data: { path: [token.address] } },
-                    { section: 'Homa', method: 'Minted', data: { currencyId: token.address } },
-                    { section: 'Homa', method: 'Redeemed', data: { currencyId: token.address } },
-                    { section: 'Rewards', method: 'Reward', data: { currencyId: token.address } }
-                ]
-            });
+            const events = await this.repository.eventRepo.createQueryBuilder('event')
+                .where(`(
+                    (event.section = 'Tokens' AND event.method = 'Transfer' AND JSON_EXTRACT(event.data, '$.currencyId') = :tokenAddress) OR
+                    (event.section = 'Balances' AND event.method = 'Transfer' AND JSON_EXTRACT(event.data, '$.currencyId') = :tokenAddress) OR
+                    (event.section = 'Dex' AND event.method = 'Swap' AND JSON_CONTAINS(event.data, :tokenAddress, '$.path')) OR
+                    (event.section = 'Homa' AND event.method = 'Minted' AND JSON_EXTRACT(event.data, '$.currencyId') = :tokenAddress) OR
+                    (event.section = 'Homa' AND event.method = 'Redeemed' AND JSON_EXTRACT(event.data, '$.currencyId') = :tokenAddress) OR
+                    (event.section = 'Rewards' AND event.method = 'Reward' AND JSON_EXTRACT(event.data, '$.currencyId') = :tokenAddress)
+                `, { tokenAddress: token.address })
+                .getMany();
 
             // Calculate daily volume and txns
             this.logger.debug(`Found ${events.length} relevant events for token ${token.symbol}`);
