@@ -231,6 +231,13 @@ Extract data from Acala network:
 npm run extract
 ```
 
+Truncate tables with specified prefix(es):
+```bash
+npm run trunk -- --schema=prefix
+# Multiple prefixes example:
+npm run trunk -- --schema=dim,fact  # Will truncate dim_* and fact_* tables
+```
+
 Extract historical data (specify block range):
 ```bash
 npm run extract -- --startBlock=1000000 --endBlock=1000100

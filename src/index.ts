@@ -16,7 +16,7 @@ program
     // Set the description of the CLI tool
     .description('CLI for extracting and transforming Acala blockchain data')
     // Set the version of the CLI tool
-    .version('0.3.0');
+    .version('0.4.0');
 
 // Define a new 'extract' command
 program.command('extract')
@@ -218,21 +218,23 @@ program.command('trunk')
                 const queryRunner = extractDataSource.createQueryRunner();
                 
                 await queryRunner.connect();
+                const schemas = options.schema.split(',').map((s: string) => s.trim());
+                const conditions = schemas.map((s: string) => `table_name LIKE '${s}_%'`).join(' OR ');
+                
                 const tables = await queryRunner.query(
                     `SELECT table_name 
                      FROM information_schema.tables 
-                     WHERE table_schema = 'public' 
-                     AND table_name LIKE '${options.schema}_%'`
+                     WHERE ${conditions}`
                 );
 
                 if (tables.length === 0) {
-                    console.log(`No tables found with prefix '${options.schema}_'`);
+                    console.log(`No tables found with prefixes: ${schemas.join(', ')}`);
                     return;
                 }
 
-                console.log(`Truncating ${tables.length} tables with prefix '${options.schema}_'`);
+                console.log(`Truncating ${tables.length} tables with prefixes: ${schemas.join(', ')}`);
                 for (const table of tables) {
-                    await queryRunner.query(`TRUNCATE TABLE ${table.table_name} RESTART IDENTITY CASCADE`);
+                    await queryRunner.query(`TRUNCATE TABLE ${table.table_name}`);
                     console.log(`Truncated table: ${table.table_name}`);
                 }
                 
