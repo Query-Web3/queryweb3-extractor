@@ -5,9 +5,6 @@ import { DimReturnType } from '../entities/DimReturnType';
 import { DimToken } from '../entities/DimToken';
 import { DimStatCycle } from '../entities/DimStatCycle';
 import { FactTokenDailyStat } from '../entities/FactTokenDailyStat';
-import { FactTokenMonthlyStat } from '../entities/FactTokenMonthlyStat';
-import { FactTokenWeeklyStat } from '../entities/FactTokenWeeklyStat';
-import { FactTokenYearlyStat } from '../entities/FactTokenYearlyStat';
 import { FactYieldStat } from '../entities/FactYieldStat';
 import { BatchLog } from '../entities/BatchLog';
 import { Extrinsic } from '../entities/Extrinsic';
@@ -28,15 +25,12 @@ export const transformDataSource = new DataSource({
     DimToken,
     DimStatCycle,
     FactTokenDailyStat,
-    FactTokenMonthlyStat,
-    FactTokenWeeklyStat,
-    FactTokenYearlyStat,
     FactYieldStat,
     BatchLog,
     Extrinsic,
     Block,
     Event
   ],
-  synchronize: process.env.NODE_ENV === 'development',
+  synchronize: false,
   logging: process.env.NODE_ENV === 'development',
 });

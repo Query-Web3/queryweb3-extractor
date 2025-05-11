@@ -7,6 +7,7 @@ export class WeeklyStatsProcessor {
     constructor(private repository: TokenStatsRepository, private logger: Logger) {}
 
     public async processToken(token: DimToken) {
+        this.logger.setLogLevel(process.env.LOGGER_LEVEL as LogLevel || LogLevel.INFO);
         const tokenTimer = this.logger.time(`Process weekly stats for token ${token.symbol}`);
         this.logger.info(`Processing weekly stats for token ${token.symbol} (${token.address})`);
         
@@ -59,13 +60,20 @@ export class WeeklyStatsProcessor {
             const txnsYoY = prevYearStat ? 
                 ((weeklyTxns - prevYearStat.txnsCount) / prevYearStat.txnsCount * 100) : undefined;
 
-            // First ensure token exists in dim_tokens table
-            const tokenRecord = await this.repository.tokenRepo.findOne({ 
-                where: { id: token.id } 
+            // Find token in dim_tokens table by symbol or name
+            const tokenRecord = await this.repository.tokenRepo.findOne({
+                where: [
+                    { symbol: token.symbol },
+                    { name: token.symbol } // Also try matching by name if symbol not found
+                ]
             });
+
             if (!tokenRecord) {
-                throw new Error(`Token with ID ${token.id} not found in dim_tokens table`);
+                this.logger.warn(`Skipping token ${token.symbol} - no matching record found in dim_tokens table`);
+                return false;
             }
+
+            this.logger.debug(`Found matching token record for ${token.symbol}: ID=${tokenRecord.id}`);
 
             // Calculate QoQ changes
             const volumeQoQ = prevWeekStat ? 

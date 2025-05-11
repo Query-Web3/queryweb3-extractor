@@ -45,9 +45,24 @@ export class YearlyStatsProcessor {
             // Get token price from oracle (use default 1.0 if not available)
             const tokenPrice = await getTokenPriceFromOracle(token.address) ?? 1.0;
 
+            // Find token in dim_tokens table by symbol or name
+            const tokenRecord = await this.repository.tokenRepo.findOne({
+                where: [
+                    { symbol: token.symbol },
+                    { name: token.symbol } // Also try matching by name if symbol not found
+                ]
+            });
+
+            if (!tokenRecord) {
+                this.logger.warn(`Skipping token ${token.symbol} - no matching record found in dim_tokens table`);
+                return false;
+            }
+
+            this.logger.debug(`Found matching token record for ${token.symbol}: ID=${tokenRecord.id}`);
+
             // Get previous year's stats and calculate YoY changes
             const prevYearStat = await this.repository.yearlyStatRepo.findOne({ 
-                where: { tokenId: token.id, date: new Date(today.setFullYear(today.getFullYear() - 2)) } 
+                where: { tokenId: tokenRecord.id, date: new Date(today.setFullYear(today.getFullYear() - 2)) } 
             });
             const volumeYoY = prevYearStat ? 
                 ((yearlyVolume - prevYearStat.volume) / prevYearStat.volume * 100) : 0;
@@ -55,7 +70,7 @@ export class YearlyStatsProcessor {
                 ((yearlyTxns - prevYearStat.txnsCount) / prevYearStat.txnsCount * 100) : 0;
 
             const yearlyStat = {
-                tokenId: token.id,
+                tokenId: tokenRecord.id,
                 date: today,
                 cycleId: this.repository.yearlyCycle?.id,
                 volume: yearlyVolume,

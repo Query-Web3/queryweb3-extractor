@@ -107,7 +107,7 @@ export async function getTokenPriceFromOracle(tokenAddress: string): Promise<num
     const acalaPrice = await getPriceFromAcalaSwap();
     if (acalaPrice) {
         logger.debug(`Using Acala Swap price: ${acalaPrice}`);
-        console.log(`[ACA Price] Current price: $${acalaPrice.toFixed(4)} (from Acala Swap)`);
+        console.log(`[ACA Price] Current price: $${acalaPrice.toFixed(8)} (from Acala Swap)`);
         priceCache.set(tokenAddress, {price: acalaPrice, timestamp: Date.now()});
         priceTimer.end();
         return acalaPrice;

@@ -45,12 +45,27 @@ export class MonthlyStatsProcessor {
             // Get token price from oracle (use default 1.0 if not available)
             const tokenPrice = await getTokenPriceFromOracle(token.address) ?? 1.0;
 
+            // Find token in dim_tokens table by symbol or name
+            const tokenRecord = await this.repository.tokenRepo.findOne({
+                where: [
+                    { symbol: token.symbol },
+                    { name: token.symbol } // Also try matching by name if symbol not found
+                ]
+            });
+
+            if (!tokenRecord) {
+                this.logger.warn(`Skipping token ${token.symbol} - no matching record found in dim_tokens table`);
+                return false;
+            }
+
+            this.logger.debug(`Found matching token record for ${token.symbol}: ID=${tokenRecord.id}`);
+
             // Get previous stats for comparisons
             const prevMonthStat = await this.repository.monthlyStatRepo.findOne({ 
-                where: { tokenId: token.id, date: new Date(today.setMonth(today.getMonth() - 2)) } 
+                where: { tokenId: tokenRecord.id, date: new Date(today.setMonth(today.getMonth() - 2)) } 
             });
             const prevYearStat = await this.repository.yearlyStatRepo.findOne({ 
-                where: { tokenId: token.id, date: new Date(today.setFullYear(today.getFullYear() - 1)) } 
+                where: { tokenId: tokenRecord.id, date: new Date(today.setFullYear(today.getFullYear() - 1)) } 
             });
 
             // Calculate YoY and QoQ changes
@@ -69,7 +84,7 @@ export class MonthlyStatsProcessor {
                 ((monthlyTxns - prevQuarterStat.txnsCount) / prevQuarterStat.txnsCount * 100) : 0;
 
             const monthlyStat = {
-                tokenId: token.id,
+                tokenId: tokenRecord.id,
                 date: today,
                 cycleId: this.repository.monthlyCycle?.id,
                 volume: monthlyVolume,

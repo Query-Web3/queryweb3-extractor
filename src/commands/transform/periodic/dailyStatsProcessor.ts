@@ -1,5 +1,9 @@
+import dotenv from 'dotenv';
 import { TokenStatsRepository } from '../token/tokenStatsRepository';
 import { Logger, LogLevel } from '../../../utils/logger';
+
+// 加载环境变量
+dotenv.config();
 import { getTokenPriceFromOracle } from '../utils';
 import { DimToken } from '../../../entities/DimToken';
 
@@ -7,6 +11,9 @@ export class DailyStatsProcessor {
     constructor(private repository: TokenStatsRepository, private logger: Logger) {}
 
     public async processToken(token: DimToken) {
+        const logLevel = process.env.LOGGER_LEVEL as LogLevel || LogLevel.INFO;
+        this.logger.setLogLevel(logLevel);
+        this.logger.debug(`Logger initialized with level: ${logLevel}`);
         const tokenTimer = this.logger.time(`Process token ${token.symbol}`);
         this.logger.info(`Processing daily stats for token ${token.symbol} (${token.address})`);
         
@@ -23,7 +30,7 @@ export class DailyStatsProcessor {
                     (event.section = 'Dex' AND event.method = 'Swap' AND JSON_CONTAINS(event.data, :tokenAddress, '$.path')) OR
                     (event.section = 'Homa' AND event.method = 'Minted' AND JSON_EXTRACT(event.data, '$.currencyId') = :tokenAddress) OR
                     (event.section = 'Homa' AND event.method = 'Redeemed' AND JSON_EXTRACT(event.data, '$.currencyId') = :tokenAddress) OR
-                    (event.section = 'Rewards' AND event.method = 'Reward' AND JSON_EXTRACT(event.data, '$.currencyId') = :tokenAddress)
+                    (event.section = 'Rewards' AND event.method = 'Reward' AND event.data IS NOT NULL AND JSON_VALID(event.data) AND JSON_EXTRACT(event.data, '$.currencyId') = :tokenAddress)
                 )`, { tokenAddress: token.address })
                 .getMany();
 
@@ -86,13 +93,22 @@ export class DailyStatsProcessor {
             });
 
             try {
-                // First ensure token exists in dim_tokens table
-                const tokenRecord = await this.repository.tokenRepo.findOne({ 
-                    where: { id: token.id } 
+                // Find token in dim_tokens table by symbol or name
+                const tokenRecord = await this.repository.tokenRepo.findOne({
+                    where: [
+                        { symbol: token.symbol },
+                        { name: token.symbol } // Also try matching by name if symbol not found
+                    ]
                 });
+
                 if (!tokenRecord) {
-                    throw new Error(`Token with ID ${token.id} not found in dim_tokens table`);
+                    this.logger.warn(`Skipping token ${token.symbol} - no matching record found in dim_tokens table`);
+                    return false;
+                } else {
+                    this.logger.info(`Found ${token.symbol} - ID=${tokenRecord.id}`);
                 }
+
+                this.logger.debug(`Found matching token record for ${token.symbol}: ID=${tokenRecord.id}`);
 
                 // Calculate txns_qoq based on previous quarter's stats (90 days ago)
                 const prevQuarterDate = new Date(today);
@@ -100,7 +116,7 @@ export class DailyStatsProcessor {
                 const prevQuarterStat = await this.repository.dailyStatRepo
                     .createQueryBuilder('stat')
                     .select('SUM(stat.volume) as volume, SUM(stat.txns_count) as txns_count')
-                    .where('stat.token_id = :tokenId', { tokenId: token.id })
+                    .where('stat.token_id = :tokenId', { tokenId: tokenRecord.id })
                     .andWhere('stat.date BETWEEN :start AND :end', {
                         start: new Date(prevQuarterDate.setDate(prevQuarterDate.getDate() - 90)),
                         end: prevQuarterDate
@@ -128,21 +144,23 @@ export class DailyStatsProcessor {
                         ((dailyVolume - prevMonthStat.volume) / prevMonthStat.volume * 100) : 0
                 };
 
+                this.logger.debug('Stat Data:', statData);
+
                 if (!existingStat) {
-                    this.logger.debug(`Inserting new daily stat record for ${token.symbol}`, {
+                    this.logger.warn(`Inserting new daily stat record for ${token.symbol}`, {
                         ...statData,
                         token_symbol: tokenRecord.symbol,
                         token_address: tokenRecord.address
                     });
                     const result = await this.repository.dailyStatRepo.insert(statData);
                     if (!result.identifiers[0]?.id) {
-                        throw new Error(`Failed to insert daily stat record for ${token.symbol}`);
+                        throw new Error(`Failed to insert daily stat record for ${token.symbol} because of missing ID`);
                     }
                 } else if (existingStat.id) {
-                    this.logger.debug(`Updating existing daily stat record for ${token.symbol}`, statData);
+                    this.logger.warn(`Updating existing daily stat record for ${token.symbol}`, statData);
                     const result = await this.repository.dailyStatRepo.update(existingStat.id, statData);
                     if (result.affected === 0) {
-                        throw new Error(`Failed to update daily stat record for ${token.symbol}`);
+                        throw new Error(`Failed to update daily stat record for ${token.symbol} because of no affected rows`);
                     }
                 }
 
