@@ -29,6 +29,10 @@ export class Block {
       accountId: string;
       position: string;
     }>;
+    events: Array<{
+      currencyId: string;
+      [key: string]: any;
+    }>;
   } | null;
 
   @OneToMany(() => Extrinsic, (extrinsic) => extrinsic.block)

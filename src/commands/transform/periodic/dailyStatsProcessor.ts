@@ -73,19 +73,19 @@ export class DailyStatsProcessor {
             });
 
             const statData = {
-                tokenId: token.id,
+                token_id: token.id,
                 date: today,
-                cycleId: this.repository.dailyCycle?.id,
+                cycle_id: this.repository.dailyCycle?.id,
                 volume: dailyVolume,
-                volumeUsd: dailyVolume * tokenPrice,
-                txnsCount: dailyTxns,
-                priceUsd: tokenPrice,
-                volumeYoY,
-                volumeQoQ,
-                txnsYoY,
-                volumeWoW: prevWeekStat ?
+                volume_usd: dailyVolume * tokenPrice,
+                txns_count: dailyTxns,
+                price_usd: tokenPrice,
+                volume_yoy: volumeYoY,
+                volume_qoq: volumeQoQ,
+                txns_yoy: txnsYoY,
+                volume_wow: prevWeekStat ?
                     ((dailyVolume - prevWeekStat.volume) / prevWeekStat.volume * 100) : 0,
-                volumeMoM: prevMonthStat ?
+                volume_mom: prevMonthStat ?
                     ((dailyVolume - prevMonthStat.volume) / prevMonthStat.volume * 100) : 0
             };
 

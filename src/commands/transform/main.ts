@@ -1,6 +1,8 @@
 import { BatchLog, BatchStatus, BatchType } from '../../entities/BatchLog';
 import { showLastBatchLog, pauseBatch, resumeBatch } from '../common/batchLog';
 import { Block } from '../../entities/Block';
+import { DimToken } from '../../entities/DimToken';
+import { Not, IsNull } from 'typeorm';
 import { Extrinsic } from '../../entities/Extrinsic';
 import { Event } from '../../entities/Event';
 import { initializeDataSource } from './dataSource';
@@ -61,8 +63,36 @@ export async function transformData(batchLog?: BatchLog) {
             logger.info(`Processing latest block #${latestBlock.number} (batchId: ${latestBlock.batchId})`);
             blockTimer.end();
 
-            // Batch collect all token IDs that need processing
+            // Batch collect all token IDs that need processing (including from Acala data)
             const tokenIds = new Set<string>();
+
+            // Process all blocks with acalaData
+            const acalaBlocks = await blockRepo.find({
+                where: { acalaData: Not(IsNull()) },
+                order: { number: 'ASC' }
+            });
+
+            if (acalaBlocks.length > 0) {
+                const acalaTimer = logger.time('Process Acala block data');
+                logger.info(`Found ${acalaBlocks.length} blocks with Acala data`);
+                
+                for (const block of acalaBlocks) {
+                    try {
+                        const acalaData = block.acalaData;
+                        if (acalaData?.events) {
+                            for (const event of acalaData.events) {
+                                if (event?.currencyId) {
+                                    tokenIds.add(event.currencyId);
+                                }
+                            }
+                        }
+                    } catch (e) {
+                        logger.error(`Failed to process Acala data for block #${block.number}`, e as Error);
+                    }
+                }
+                acalaTimer.end();
+            }
+
             
             // Process extrinsics
             const methodsToProcess = [
@@ -151,6 +181,19 @@ export async function transformData(batchLog?: BatchLog) {
                 tokenTimer.end();
             }
 
+            // Validate data consistency
+            const validateTimer = logger.time('Validate data');
+            const tokenCount = await dataSource.getRepository(DimToken).count();
+            const blockCount = await blockRepo.count();
+            
+            if (tokenCount === 0) {
+                logger.warn('No tokens found in DimToken table');
+            }
+            if (blockCount === 0) {
+                logger.warn('No blocks found in acala_block table');
+            }
+            validateTimer.end();
+
             const statsTimer = logger.time('Process stats');
             await initializeDimensionTables();
             await processTokenStats();
@@ -158,7 +201,7 @@ export async function transformData(batchLog?: BatchLog) {
             statsTimer.end();
             
             await queryRunner.commitTransaction();
-            logger.info('Data transformation completed and committed');
+            logger.info(`Data transformation completed. Stats: ${tokenCount} tokens, ${blockCount} blocks processed`);
         } catch (e) {
             await queryRunner.rollbackTransaction();
             logger.error('Transaction rolled back due to error', e as Error);
