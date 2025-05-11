@@ -5,6 +5,18 @@ import { DimStatCycle } from '../../entities/DimStatCycle';
 import { Event } from '../../entities/Event';
 import { initializeDataSource } from './dataSource';
 import { getTokenPriceFromOracle } from './utils';
+import { createApi, disconnectApi } from '../common/apiConnector';
+
+async function getPoolAddressFromChain(tokenAddress: string): Promise<string> {
+    const api = await createApi();
+    try {
+        // 查询Rewards模块的poolAccounts获取poolAddress
+        const poolAccount = await api.query.rewards.poolAccounts(tokenAddress);
+        return poolAccount.toString();
+    } finally {
+        await disconnectApi(api);
+    }
+}
 
 export async function processYieldStats() {
     const dataSource = await initializeDataSource();
@@ -66,7 +78,7 @@ export async function processYieldStats() {
                 tokenId: token.id,
                 returnTypeId: returnType.id,
                 cycleId: dailyCycle?.id,
-                poolAddress: '0x0000000000000000000000000000000000000000',
+                poolAddress: await getPoolAddressFromChain(token.address),
                 date: today,
                 apy,
                 tvl,
