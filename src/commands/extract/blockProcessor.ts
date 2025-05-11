@@ -5,13 +5,13 @@ import { Event } from '../../entities/Event';
 import { ApiPromise } from '@polkadot/api';
 import { initializeDataSource } from './dataSource';
 
-/**
- * Processes a single block, extracting extrinsics and events
- * @param block - Block data to process
- * @param workerId - Worker ID for progress tracking
- * @param api - Polkadot API instance
- * @param batchId - Unique batch ID for tracking
- */
+interface PaymentInfo {
+    partialFee: {
+        toString: () => string;
+    };
+    toHuman: () => Record<string, any>;
+}
+
 export async function processBlock(
     block: {
         number: number;
@@ -25,81 +25,62 @@ export async function processBlock(
     try {
         if (!api) throw new Error('API not initialized');
         
-        // Get the full block data
         const signedBlock = await api.rpc.chain.getBlock(block.hashObj);
-        // Get the system events for the current block
         const events = await api.query.system.events.at(block.hashObj);
 
-        // Process each extrinsic in the block to extract relevant information
         const extrinsics = await Promise.all(signedBlock.block.extrinsics.map(async (ext: any, index: number) => {
             let fee = '0';
             try {
-                // Get the payment information for the extrinsic to calculate the fee
                 if (ext && ext.isSigned && ext.signer && ext.method && api && api.isConnected) {
                     console.log(`Getting payment info for extrinsic ${index} with signer ${ext.signer.toString()}`);
-                    try {
-                        // Validate extrinsic method exists
-                        if (!api.tx[ext.method.section]?.[ext.method.method]) {
-                            console.warn(`Extrinsic method ${ext.method.section}.${ext.method.method} not found in API`);
+                    
+                    if (!api.tx[ext.method.section]?.[ext.method.method]) {
+                        console.warn(`Extrinsic method ${ext.method.section}.${ext.method.method} not found in API`);
+                        fee = '0';
+                    } else {
+                        const tx = api.tx(ext.method);
+                        if (!tx || !tx.isSigned) {
+                            console.log(`Skipping payment info for unsigned extrinsic ${index}`);
                             fee = '0';
                         } else {
-                            const tx = api.tx(ext.method);
-                            if (!tx || !tx.isSigned) {
-                                throw new Error('Invalid or unsigned transaction');
+                            try {
+                                const paymentInfo = await Promise.race<PaymentInfo>([
+                                    tx.paymentInfo(ext.signer),
+                                    new Promise<PaymentInfo>((_, reject) => 
+                                        setTimeout(() => reject(new Error('Payment info timeout')), 5000)
+                                )]);
+                                if (paymentInfo?.partialFee) {
+                                    fee = paymentInfo.partialFee.toString();
+                                    console.log(`Payment info for extrinsic ${index}: ${JSON.stringify(paymentInfo.toHuman())}`);
+                                }
+                            } catch (e) {
+                                console.error(`Failed to get payment info for extrinsic ${index}:`, e);
                             }
-                            // Add timeout for payment info call
-                            const paymentInfo = await Promise.race<{
-                                partialFee: { toString: () => string };
-                                toHuman: () => Record<string, any>;
-                            }>([
-                                tx.paymentInfo(ext.signer),
-                                new Promise((_, reject) =>
-                                    setTimeout(() => reject(new Error('Payment info timeout')), 5000)
-                                )
-                            ]);
-                            if (!paymentInfo || !paymentInfo.partialFee) {
-                                throw new Error('Invalid payment info response');
-                            }
-                            fee = paymentInfo.partialFee.toString();
-                            console.log(`Payment info for extrinsic ${index}: ${JSON.stringify(paymentInfo.toHuman())}`);
                         }
-                    } catch (e) {
-                        console.error(`Failed to get payment info for extrinsic ${index}:`, e);
-                        fee = '0';
                     }
-                } else {
-                    if (!ext.signer) {
-                        console.log(`Skipping payment info for unsigned extrinsic ${index}`);
-                    } else if (!api || !api.isConnected) {
-                        console.error('API connection not available for payment info');
-                    }
-                    fee = '0';
+                } else if (!ext.signer) {
+                    console.log(`Skipping payment info for unsigned extrinsic ${index}`);
                 }
             } catch (e) {
-                console.error(`Failed to get payment info for extrinsic ${index}:`, e);
-                fee = '0';
+                console.error(`Failed to process extrinsic ${index}:`, e);
             }
             
-                const methodSection = ext.method.section;
-                const methodName = ext.method.method;
-                return {
-                    index: index,
-                    method: `${methodSection}.${methodName}`,
-                    signer: ext.signer ? ext.signer.toString() : null,
-                    fee,
-                    status: 'pending',
-                    params: ext.method.toHuman()
-                };
+            return {
+                index,
+                method: `${ext.method.section}.${ext.method.method}`,
+                signer: ext.signer?.toString() || null,
+                fee,
+                status: 'pending',
+                params: ext.method.toHuman()
+            };
         }));
 
-        // Use transaction to save block data
         const dataSource = await initializeDataSource();
         const queryRunner = dataSource.createQueryRunner();
         await queryRunner.connect();
         await queryRunner.startTransaction();
         
         try {
-            // Create a block record in the database
             const blockRecord = await queryRunner.manager.getRepository(Block).save({
                 number: block.number,
                 hash: block.hash,
@@ -107,49 +88,27 @@ export async function processBlock(
             });
             
             if (extrinsics.length > 0) {
-                // Create records for each extrinsic in the database
                 const createdExtrinsics = await Promise.all(extrinsics.map(async ext => {
-                    // Check if extrinsic already exists
-                    const existingExtrinsic = await queryRunner.manager.getRepository(Extrinsic).findOne({
-                        where: {
-                            blockId: blockRecord.id,
-                            index: ext.index
-                        }
+                    const existing = await queryRunner.manager.getRepository(Extrinsic).findOne({
+                        where: { blockId: blockRecord.id, index: ext.index }
                     });
-                    
-                    if (!existingExtrinsic) {
-                        return await queryRunner.manager.getRepository(Extrinsic).save({
-                            blockId: blockRecord.id,
-                            index: ext.index,
-                            method: ext.method,
-                            signer: ext.signer,
-                            fee: ext.fee,
-                            status: ext.status,
-                            params: ext.params,
-                            batchId
-                        });
-                    }
-                    return existingExtrinsic;
-                }).filter(Boolean));
-                
-                // Create records for each event in the database
-                await Promise.all((events as any).map(async (record: any, index: number) => {
+                    return existing || await queryRunner.manager.getRepository(Extrinsic).save({
+                        blockId: blockRecord.id,
+                        ...ext,
+                        batchId
+                    });
+                }));
+
+                await Promise.all((events as unknown as any[]).map(async (record: any, index: number) => {
                     const { event, phase } = record;
-                    // Determine the associated extrinsic ID based on the event phase
                     const extrinsicId = phase.isApplyExtrinsic
                         ? createdExtrinsics[phase.asApplyExtrinsic.toNumber()]?.id
                         : null;
                         
-                    // Check if event already exists
-                    const existingEvent = await queryRunner.manager.getRepository(Event).findOne({
-                        where: {
-                            block: { id: blockRecord.id },
-                            index: index
-                        }
-                    });
-                
-                    if (!existingEvent) {
-                        return await queryRunner.manager.getRepository(Event).save({
+                    if (!await queryRunner.manager.getRepository(Event).findOne({
+                        where: { block: { id: blockRecord.id }, index }
+                    })) {
+                        await queryRunner.manager.getRepository(Event).save({
                             block: { id: blockRecord.id },
                             extrinsic: extrinsicId ? { id: extrinsicId } : undefined,
                             index,
@@ -159,11 +118,9 @@ export async function processBlock(
                             batchId
                         });
                     }
-                    return null;
                 }));
             }
             
-            // Commit transaction
             await queryRunner.commitTransaction();
             return {
                 number: block.number,
@@ -172,12 +129,10 @@ export async function processBlock(
                 timestamp: new Date()
             };
         } catch (e) {
-            // Rollback transaction
             await queryRunner.rollbackTransaction();
             console.error(`Error processing block ${block.number}:`, e);
             throw e;
         } finally {
-            // Release queryRunner
             await queryRunner.release();
         }
     } catch (e) {
