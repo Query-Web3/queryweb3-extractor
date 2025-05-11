@@ -1,6 +1,8 @@
 import axios from 'axios';
 import { Logger, LogLevel } from '../../utils/logger';
 import WebSocket, { MessageEvent } from 'ws';
+import { ApiPromise, WsProvider } from '@polkadot/api';
+import { options } from '@acala-network/api';
 
 // Price cache
 const priceCache = new Map<string, {price: number, timestamp: number}>();
@@ -42,6 +44,50 @@ function initBinanceWS() {
     });
 }
 
+// Acala API instance
+let acalaApi: ApiPromise | null = null;
+
+// Initialize Acala API
+async function initAcalaApi() {
+    if (acalaApi) return acalaApi;
+    
+    const logger = Logger.getInstance();
+    try {
+        const provider = new WsProvider('wss://acala-rpc-0.aca-api.network');
+        acalaApi = await ApiPromise.create(options({ provider }));
+        logger.debug('Acala API connected');
+        return acalaApi;
+    } catch (error) {
+        logger.warn('Failed to connect to Acala API', error);
+        return null;
+    }
+}
+
+// Get token price from Acala Swap
+async function getPriceFromAcalaSwap(): Promise<number | null> {
+    const logger = Logger.getInstance();
+    try {
+        const api = await initAcalaApi();
+        if (!api) return null;
+        
+        // Query the dex module for ACA/AUSD price using token symbols directly
+        const result = await api.query.dex.liquidityPool([
+            { token: 'ACA' }, 
+            { token: 'AUSD' }
+        ]);
+        const [acaAmount, ausdAmount] = result.toJSON() as [string, string];
+        
+        if (!acaAmount || !ausdAmount) return null;
+        
+        const price = Number(ausdAmount) / Number(acaAmount);
+        logger.debug(`Got price from Acala Swap: ${price}`);
+        return price;
+    } catch (error) {
+        logger.warn('Failed to get price from Acala Swap', error);
+        return null;
+    }
+}
+
 // Get token price from oracle APIs
 export async function getTokenPriceFromOracle(tokenAddress: string): Promise<number | null> {
     const logger = Logger.getInstance();
@@ -55,6 +101,16 @@ export async function getTokenPriceFromOracle(tokenAddress: string): Promise<num
         logger.debug(`Using cached price for ${tokenAddress}: ${cached.price}`);
         priceTimer.end();
         return cached.price;
+    }
+
+    // Try Acala Swap first
+    const acalaPrice = await getPriceFromAcalaSwap();
+    if (acalaPrice) {
+        logger.debug(`Using Acala Swap price: ${acalaPrice}`);
+        console.log(`[ACA Price] Current price: $${acalaPrice.toFixed(4)} (from Acala Swap)`);
+        priceCache.set(tokenAddress, {price: acalaPrice, timestamp: Date.now()});
+        priceTimer.end();
+        return acalaPrice;
     }
 
     // Wait for WebSocket price with timeout
