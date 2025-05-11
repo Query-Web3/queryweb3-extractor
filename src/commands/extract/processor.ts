@@ -181,8 +181,24 @@ async function collectBlocksToProcess(
                             
                             // Additional Acala-specific data extraction
                             const apiAt = await api.at(blockHash);
-                            const dexPools = await apiAt.query.dex.liquidityPool.entries();
-                            const stableCoinBalances = await apiAt.query.honzon.totalPositions.entries();
+                            let dexPools: [any, any][] = [];
+                            let stableCoinBalances: [any, any][] = [];
+                            
+                            try {
+                                if (apiAt.query.dex?.liquidityPool) {
+                                    dexPools = await apiAt.query.dex.liquidityPool.entries();
+                                }
+                            } catch (e) {
+                                console.warn(`Failed to get DEX pools for block ${blockNumber}:`, e);
+                            }
+                            
+                            try {
+                                if (apiAt.query.honzon?.totalPositions) {
+                                    stableCoinBalances = await apiAt.query.honzon.totalPositions.entries();
+                                }
+                            } catch (e) {
+                                console.warn(`Failed to get stable coin balances for block ${blockNumber}:`, e);
+                            }
                             
                             // Check if the block already exists in the database
                             const existingBlock = await dataSource.getRepository(Block).findOne({
