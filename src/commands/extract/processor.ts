@@ -43,40 +43,27 @@ export async function processBlocks(
     const api = await createApiConnection();
 
     try {
-        const blocksToProcess = await collectBlocksToProcess(
+        processedCount = await collectBlocksToProcess(
             api, 
             dataSource, 
             determinedStart, 
             determinedEnd, 
-            isHistorical
+            isHistorical,
+            batchId
         );
-
-        if (blocksToProcess.length > 0) {
-            const { CONCURRENCY, CHUNK_SIZE } = getConcurrencySettings(blocksToProcess.length);
-            const chunks = splitIntoChunks(blocksToProcess, CHUNK_SIZE);
-            
-            for (let i = 0; i < chunks.length; i += CONCURRENCY) {
-                const currentChunks = chunks.slice(i, i + CONCURRENCY);
-                const results = await Promise.all(
-                    currentChunks.map(chunk => processChunk(chunk, api, batchId))
-                );
-                processedCount += results.reduce((sum, count) => sum + count, 0);
-            }
-        }
 
         await updateBatchLog(
             dataSource, 
             batchLog, 
             processedCount, 
-            blocksToProcess
+            determinedEnd
         );
 
         await releaseLock(dataSource, batchId);
 
         return {
             processedCount,
-            lastProcessedHeight: blocksToProcess.length > 0 ? 
-                blocksToProcess[blocksToProcess.length - 1].number : null
+            lastProcessedHeight: processedCount > 0 ? determinedEnd : null
         };
     } catch (e) {
         if (e instanceof Error) {
@@ -98,10 +85,11 @@ async function collectBlocksToProcess(
     dataSource: DataSource,
     startBlock: number,
     endBlock: number,
-    isHistorical: boolean
+    isHistorical: boolean,
+    batchId: string
 ) {
     const logger = Logger.getInstance();
-    const blocksToProcess = [];
+    let processedCount = 0;
     
     if (isHistorical) {
         const totalBlocks = endBlock - startBlock + 1;
@@ -120,9 +108,10 @@ async function collectBlocksToProcess(
                 let currentBatchStart = batchStart;
                 while (currentBatchStart <= batchEnd) {
                     const currentBatchEnd = Math.min(currentBatchStart + batchSize - 1, batchEnd);
-                    logger.info(`Processing blocks ${currentBatchStart} to ${currentBatchEnd}`);
+                    logger.info(`Fetching blocks' data from ${currentBatchStart} to ${currentBatchEnd}`);
                     const batchTimer = logger.time(`Batch ${batchNum + 1}/${totalBatches}`);
                     
+                    const batchBlocks = [];
                     for (let blockNumber = currentBatchStart; blockNumber <= currentBatchEnd; blockNumber++) {
                         try {
                             const blockHash = await api.rpc.chain.getBlockHash(blockNumber);
@@ -133,7 +122,7 @@ async function collectBlocksToProcess(
                             });
                             
                             if (!existingBlock) {
-                                blocksToProcess.push({
+                                batchBlocks.push({
                                     number: blockNumber,
                                     hash: blockHash.toString(),
                                     header,
@@ -152,6 +141,11 @@ async function collectBlocksToProcess(
                         }
                     }
                     
+                    if (batchBlocks.length > 0) {
+                        const processed = await processChunk(batchBlocks, api, batchId);
+                        processedCount += processed;
+                    }
+                    
                     currentBatchStart = currentBatchEnd + 1;
                 }
             }
@@ -162,22 +156,21 @@ async function collectBlocksToProcess(
         // ... (real-time block processing logic)
     }
 
-    return blocksToProcess;
+    return processedCount;
 }
 
 async function updateBatchLog(
     dataSource: DataSource,
     batchLog: {id: number, batchId: string},
     processedCount: number,
-    blocksToProcess: any[]
+    lastProcessedHeight: number | null
 ) {
     if (batchLog) {
         await dataSource.getRepository(BatchLog).update(batchLog.id, {
             endTime: new Date(),
             status: BatchStatus.SUCCESS,
             processed_block_count: processedCount,
-            last_processed_height: blocksToProcess.length > 0 ? 
-                blocksToProcess[blocksToProcess.length - 1].number : null
+            last_processed_height: lastProcessedHeight
         });
     }
 }

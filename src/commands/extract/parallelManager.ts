@@ -49,22 +49,6 @@ export async function processChunk(
     const progressMap = new Map<number, {current: number, total: number}>();
     let lastProgressUpdate = 0;
     
-    const updateProgress = () => {
-        const now = Date.now();
-        if (now - lastProgressUpdate < 1000) return; // Update once per second
-        lastProgressUpdate = now;
-        
-        console.log('\nCurrent parallel processing progress:');
-        progressMap.forEach((progress, workerId) => {
-            const currentBlock = chunk[progress.current - 1]?.number || 0;
-            const startBlock = chunk[0]?.number || 0;
-            const endBlock = chunk[chunk.length - 1]?.number || 0;
-            const blockProgress = Math.round((currentBlock - startBlock) / (endBlock - startBlock + 1) * 100);
-            console.log(`Worker id: ${workerId} with blocks from ${startBlock} to ${endBlock}`);
-        });
-        console.log('');
-    };
-
     // Assign unique ID to each worker
     let workerId = 0;
     
@@ -76,16 +60,12 @@ export async function processChunk(
             total: chunk.length
         });
         
-        // Update progress display
-        updateProgress();
-        
         return processBlock(block, currentWorkerId, api, batchId)
             .then(result => {
                 // Update progress when completed
                 const progress = progressMap.get(currentWorkerId);
                 if (progress) {
                     progress.current++;
-                    updateProgress();
                     const currentBlock = block.number;
                     const startBlock = chunk[0].number;
                     const endBlock = chunk[chunk.length - 1].number;
