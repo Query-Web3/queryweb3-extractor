@@ -1,12 +1,12 @@
-import { FactTokenDailyStat } from '../../entities/FactTokenDailyStat';
-import { FactTokenWeeklyStat } from '../../entities/FactTokenWeeklyStat';
-import { FactTokenMonthlyStat } from '../../entities/FactTokenMonthlyStat';
-import { FactTokenYearlyStat } from '../../entities/FactTokenYearlyStat';
-import { DimToken } from '../../entities/DimToken';
-import { DimStatCycle } from '../../entities/DimStatCycle';
-import { Event } from '../../entities/Event';
+import { FactTokenDailyStat } from '../../../entities/FactTokenDailyStat';
+import { FactTokenWeeklyStat } from '../../../entities/FactTokenWeeklyStat';
+import { FactTokenMonthlyStat } from '../../../entities/FactTokenMonthlyStat';
+import { FactTokenYearlyStat } from '../../../entities/FactTokenYearlyStat';
+import { DimToken } from '../../../entities/DimToken';
+import { DimStatCycle } from '../../../entities/DimStatCycle';
+import { Event } from '../../../entities/Event';
 import { DataSource } from 'typeorm';
-import { initializeDataSource } from './dataSource';
+import { initializeDataSource } from '../dataSource';
 
 export class TokenStatsRepository {
     private dataSource: DataSource;

@@ -1,7 +1,7 @@
-import { TokenStatsRepository } from './tokenStatsRepository';
-import { Logger, LogLevel } from '../../utils/logger';
-import { getTokenPriceFromOracle } from './utils';
-import { DimToken } from '../../entities/DimToken';
+import { TokenStatsRepository } from '../token/tokenStatsRepository';
+import { Logger, LogLevel } from '../../../utils/logger';
+import { getTokenPriceFromOracle } from '../utils';
+import { DimToken } from '../../../entities/DimToken';
 
 export class DailyStatsProcessor {
     constructor(private repository: TokenStatsRepository, private logger: Logger) {}

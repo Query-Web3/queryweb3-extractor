@@ -1,23 +1,23 @@
-import { TokenStatsRepository } from './tokenStatsRepository';
-import { Logger, LogLevel } from '../../utils/logger';
-import { getTokenPriceFromOracle } from './utils';
-import { DimToken } from '../../entities/DimToken';
+import { TokenStatsRepository } from '../token/tokenStatsRepository';
+import { Logger, LogLevel } from '../../../utils/logger';
+import { getTokenPriceFromOracle } from '../utils';
+import { DimToken } from '../../../entities/DimToken';
 
-export class WeeklyStatsProcessor {
+export class MonthlyStatsProcessor {
     constructor(private repository: TokenStatsRepository, private logger: Logger) {}
 
     public async processToken(token: DimToken) {
-        const tokenTimer = this.logger.time(`Process weekly stats for token ${token.symbol}`);
-        this.logger.info(`Processing weekly stats for token ${token.symbol} (${token.address})`);
+        const tokenTimer = this.logger.time(`Process monthly stats for token ${token.symbol}`);
+        this.logger.info(`Processing monthly stats for token ${token.symbol} (${token.address})`);
         
         try {
             const today = new Date();
             today.setHours(0, 0, 0, 0);
-            const lastWeek = new Date(today);
-            lastWeek.setDate(lastWeek.getDate() - 7);
+            const lastMonth = new Date(today);
+            lastMonth.setMonth(lastMonth.getMonth() - 1);
 
-            // Get weekly events
-            const weeklyEvents = await this.repository.eventRepo.createQueryBuilder('event')
+            // Get monthly events
+            const monthlyEvents = await this.repository.eventRepo.createQueryBuilder('event')
                 .leftJoinAndSelect('event.block', 'block')
                 .where('(event.section = :section1 AND event.method = :method1 AND event.data LIKE :data1) OR ' +
                        '(event.section = :section2 AND event.method = :method2 AND event.data LIKE :data2) OR ' +
@@ -27,10 +27,10 @@ export class WeeklyStatsProcessor {
                         section2: 'Balances', method2: 'Transfer', data2: `%${token.address}%`, 
                         section3: 'Dex', method3: 'Swap', data3: `%${token.address}%`
                     })
-                .andWhere('block.timestamp BETWEEN :start AND :end', { start: lastWeek, end: today })
+                .andWhere('block.timestamp BETWEEN :start AND :end', { start: lastMonth, end: today })
                 .getMany();
 
-            const weeklyVolume = weeklyEvents.reduce((sum, event) => {
+            const monthlyVolume = monthlyEvents.reduce((sum, event) => {
                 let amount = 0;
                 if (event.section === 'Dex' && event.method === 'Swap') {
                     amount = parseFloat(event.data.amountIn || '0') + parseFloat(event.data.amountOut || '0');
@@ -40,14 +40,14 @@ export class WeeklyStatsProcessor {
                 return sum + amount;
             }, 0);
 
-            const weeklyTxns = weeklyEvents.length;
+            const monthlyTxns = monthlyEvents.length;
 
             // Get token price from oracle or use default 1.0 if not available
             const tokenPrice = token.priceUsd ?? await getTokenPriceFromOracle(token.address) ?? 1.0;
 
             // Get previous stats for comparisons
-            const prevWeekStat = await this.repository.weeklyStatRepo.findOne({ 
-                where: { tokenId: token.id, date: new Date(today.setDate(today.getDate() - 14)) } 
+            const prevMonthStat = await this.repository.monthlyStatRepo.findOne({ 
+                where: { tokenId: token.id, date: new Date(today.setMonth(today.getMonth() - 2)) } 
             });
             const prevYearStat = await this.repository.yearlyStatRepo.findOne({ 
                 where: { tokenId: token.id, date: new Date(today.setFullYear(today.getFullYear() - 1)) } 
@@ -55,38 +55,38 @@ export class WeeklyStatsProcessor {
 
             // Calculate YoY changes
             const volumeYoY = prevYearStat ? 
-                ((weeklyVolume - prevYearStat.volume) / prevYearStat.volume * 100) : 0;
+                ((monthlyVolume - prevYearStat.volume) / prevYearStat.volume * 100) : 0;
             const txnsYoY = prevYearStat ? 
-                ((weeklyTxns - prevYearStat.txnsCount) / prevYearStat.txnsCount * 100) : 0;
+                ((monthlyTxns - prevYearStat.txnsCount) / prevYearStat.txnsCount * 100) : 0;
 
-            const weeklyStat = {
+            const monthlyStat = {
                 tokenId: token.id,
                 date: today,
-                cycleId: this.repository.weeklyCycle?.id,
-                volume: weeklyVolume,
-                volumeUsd: weeklyVolume * tokenPrice,
-                txnsCount: weeklyTxns,
+                cycleId: this.repository.monthlyCycle?.id,
+                volume: monthlyVolume,
+                volumeUsd: monthlyVolume * tokenPrice,
+                txnsCount: monthlyTxns,
                 priceUsd: tokenPrice,
                 volumeYoY,
                 txnsYoY
             };
 
-            const existingWeeklyStat = await this.repository.weeklyStatRepo.findOne({
+            const existingMonthlyStat = await this.repository.monthlyStatRepo.findOne({
                 where: { tokenId: token.id, date: today }
             });
 
-            if (!existingWeeklyStat) {
-                this.logger.debug(`Inserting new weekly stat record for ${token.symbol}`, weeklyStat);
-                await this.repository.weeklyStatRepo.insert(weeklyStat);
+            if (!existingMonthlyStat) {
+                this.logger.debug(`Inserting new monthly stat record for ${token.symbol}`, monthlyStat);
+                await this.repository.monthlyStatRepo.insert(monthlyStat);
             } else {
-                this.logger.debug(`Updating existing weekly stat record for ${token.symbol}`, weeklyStat);
-                await this.repository.weeklyStatRepo.update(existingWeeklyStat.id, weeklyStat);
+                this.logger.debug(`Updating existing monthly stat record for ${token.symbol}`, monthlyStat);
+                await this.repository.monthlyStatRepo.update(existingMonthlyStat.id, monthlyStat);
             }
 
             tokenTimer.end();
             return true;
         } catch (error) {
-            this.logger.error(`Error processing weekly stats for token ${token.symbol}`, error as Error);
+            this.logger.error(`Error processing monthly stats for token ${token.symbol}`, error as Error);
             return false;
         }
     }

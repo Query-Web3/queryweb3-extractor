@@ -1,11 +1,11 @@
-import { initializeDataSource } from './dataSource';
-import { Logger, LogLevel } from '../../utils/logger';
+import { initializeDataSource } from '../dataSource';
+import { Logger, LogLevel } from '../../../utils/logger';
 import { TokenStatsRepository } from './tokenStatsRepository';
-import { DailyStatsProcessor } from './dailyStatsProcessor';
-import { WeeklyStatsProcessor } from './weeklyStatsProcessor';
-import { MonthlyStatsProcessor } from './monthlyStatsProcessor';
-import { YearlyStatsProcessor } from './yearlyStatsProcessor';
-import { DimToken } from '../../entities/DimToken';
+import { DailyStatsProcessor } from '../periodic/dailyStatsProcessor';
+import { WeeklyStatsProcessor } from '../periodic/weeklyStatsProcessor';
+import { MonthlyStatsProcessor } from '../periodic/monthlyStatsProcessor';
+import { YearlyStatsProcessor } from '../periodic/yearlyStatsProcessor';
+import { DimToken } from '../../../entities/DimToken';
 
 export async function processTokenStats() {
     const logger = Logger.getInstance();

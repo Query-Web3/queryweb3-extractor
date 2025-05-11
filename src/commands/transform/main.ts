@@ -4,9 +4,9 @@ import { Block } from '../../entities/Block';
 import { Extrinsic } from '../../entities/Extrinsic';
 import { Event } from '../../entities/Event';
 import { initializeDataSource } from './dataSource';
-import { upsertToken, initializeDimensionTables } from './tokenProcessor';
-import { processTokenStats } from './tokenStatsProcessor';
-import { processYieldStats } from './yieldStatsProcessor';
+import { upsertToken, initializeDimensionTables } from './token/tokenProcessor';
+import { processTokenStats } from './token/tokenStatsProcessor';
+import { processYieldStats } from './yield/yieldStatsProcessor';
 import { v4 as uuidv4 } from 'uuid';
 import { Logger, LogLevel } from '../../utils/logger';
 
