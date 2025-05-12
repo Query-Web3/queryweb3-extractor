@@ -7,19 +7,22 @@ const ENDPOINTS = [
     'wss://karura.polkawallet.io'
 ];
 
-export async function createApiConnection(maxRetries: number = 3): Promise<ApiPromise> {
+export async function createApiConnection(maxRetries: number = 3, onStatusChange?: (status: 'connected' | 'disconnected' | 'error') => void): Promise<ApiPromise> {
     const provider = new WsProvider(ENDPOINTS, 2500);
     
     provider.on('error', (error) => {
         console.error('WebSocket Error:', error);
+        onStatusChange?.('error');
     });
     
     provider.on('connected', () => {
         console.log('WebSocket connected to:', provider.endpoint);
+        onStatusChange?.('connected');
     });
     
     provider.on('disconnected', () => {
         console.log('WebSocket disconnected from:', provider.endpoint);
+        onStatusChange?.('disconnected');
     });
     
     let api: ApiPromise | null = null;

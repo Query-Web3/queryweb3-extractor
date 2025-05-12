@@ -38,18 +38,40 @@ export async function runExtract(options?: {startBlock?: number, endBlock?: numb
             if (startBlock !== undefined && endBlock !== undefined) {
                 break;
             }
-        } catch (e) {
+        } catch (error) {
             // Log any errors that occur during the extraction process
-            console.error(e);
+            console.error(error);
             
             // Check if a batch log was successfully created before attempting to update it
             if (batchLog) {
-                // Update the batch log status to FAILED, set the end time, and increment the retry count
-                await (await initializeDataSource()).getRepository(BatchLog).update(batchLog.id, {
-                    endTime: new Date(),
-                    status: BatchStatus.FAILED,
-                    retryCount: batchLog.retryCount + 1
-                });
+                const e = error instanceof Error ? error : new Error(String(error));
+                const isConnectionError = e.message.includes('WebSocket is not connected');
+                
+                if (isConnectionError && batchLog.retryCount < 10) {
+                    // For connection errors, set to PAUSED and retry after delay
+                    await (await initializeDataSource()).getRepository(BatchLog).update(batchLog.id, {
+                        status: BatchStatus.PAUSED,
+                        retryCount: batchLog.retryCount + 1,
+                        errorDetails: e.message
+                    });
+                    
+                    console.log(`Connection error detected, pausing batch (retry ${batchLog.retryCount + 1}/10)`);
+                    await new Promise(resolve => setTimeout(resolve, 30000)); // Wait 30 seconds before retry
+                    continue; // Restart the loop to retry
+                } else {
+                    // For other errors or max retries reached, set to FAILED
+                    await (await initializeDataSource()).getRepository(BatchLog).update(batchLog.id, {
+                        endTime: new Date(),
+                        status: isConnectionError ? BatchStatus.FAILED : BatchStatus.FAILED,
+                        retryCount: batchLog.retryCount + 1,
+                        errorDetails: e.message
+                    });
+                    
+                    if (isConnectionError) {
+                        console.error(`Failed after 10 connection retries, exiting`);
+                        process.exit(1);
+                    }
+                }
             }
         }
         // Log the time to wait before starting the next extraction batch

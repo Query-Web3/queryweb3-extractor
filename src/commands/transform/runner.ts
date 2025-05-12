@@ -36,16 +36,38 @@ export async function runTransform() {
                 });
                 logger.info('Transform batch completed successfully');
             }
-        } catch (e) {
-            logger.error('Transform batch failed', e as Error);
+        } catch (error) {
+            const e = error instanceof Error ? error : new Error(String(error));
+            logger.error('Transform batch failed', e);
             
             if (batchLog?.id) {
-                const repo = (await initializeDataSource()).getRepository(BatchLog);
-                await repo.update(batchLog.id, {
-                    endTime: new Date(),
-                    status: BatchStatus.FAILED,
-                    retryCount: (batchLog.retryCount || 0) + 1
-                });
+                const isConnectionError = e.message.includes('WebSocket is not connected');
+                
+                if (isConnectionError && (batchLog.retryCount || 0) < 10) {
+                    const repo = (await initializeDataSource()).getRepository(BatchLog);
+                    await repo.update(batchLog.id, {
+                        status: BatchStatus.PAUSED,
+                        retryCount: (batchLog.retryCount || 0) + 1,
+                        errorDetails: e.message
+                    });
+                    
+                    logger.info(`Connection error detected, pausing batch (retry ${(batchLog.retryCount || 0) + 1}/10)`);
+                    await new Promise(resolve => setTimeout(resolve, 30000));
+                    continue;
+                } else {
+                    const repo = (await initializeDataSource()).getRepository(BatchLog);
+                    await repo.update(batchLog.id, {
+                        endTime: new Date(),
+                        status: isConnectionError ? BatchStatus.FAILED : BatchStatus.FAILED,
+                        retryCount: (batchLog.retryCount || 0) + 1,
+                        errorDetails: e.message
+                    });
+                    
+                    if (isConnectionError) {
+                        logger.error('Failed after 10 connection retries, exiting');
+                        process.exit(1);
+                    }
+                }
             }
         } finally {
             batchTimer.end();
