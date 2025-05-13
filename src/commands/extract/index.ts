@@ -1,5 +1,8 @@
 export { extractData, showLastExtractBatchLog as showLastBatchLog, pauseExtractBatch as pauseBatch, resumeExtractBatch as resumeBatch } from './main';
-export { processBlocks } from './processor';
+export { processBlocks } from './acala/processor';
+export { processBifrostData } from './bifrost/processor';
+export { processHydrationData } from './hydration/processor';
+export { processStellaswapData } from './stellaswap/processor';
 export { checkAndAcquireLock, releaseLock } from './lockManager';
 export { determineBlockRange, getLatestBlock } from './blockRange';
 export { createApiConnection, getBlockHeader } from '../common/apiConnector';

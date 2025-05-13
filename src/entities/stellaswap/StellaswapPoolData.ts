@@ -1,6 +1,6 @@
 import { Entity, PrimaryGeneratedColumn, Column } from 'typeorm';
 
-@Entity({ name: 'pool_data' })
+@Entity({ name: 'stellaswap_pool_data' })
 export class StellaswapPoolData {
   @PrimaryGeneratedColumn()
   id: number;
@@ -47,10 +47,10 @@ export class StellaswapPoolData {
   @Column({ type: 'double' })
   volume_usd_current: number;
 
-  @Column({ type: 'double' })
+  @Column({ type: 'double', nullable: true })
   volume_usd_24h_ago: number;
 
-  @Column({ type: 'double' })
+  @Column({ type: 'double', nullable: true })
   volume_usd_24h: number;
 
   @Column()
@@ -59,10 +59,10 @@ export class StellaswapPoolData {
   @Column({ type: 'double' })
   fees_usd_current: number;
 
-  @Column({ type: 'double' })
+  @Column({ type: 'double', nullable: true })
   fees_usd_24h_ago: number;
 
-  @Column({ type: 'double' })
+  @Column({ type: 'double', nullable: true })
   fees_usd_24h: number;
 
   @Column({ type: 'double' })
@@ -82,9 +82,6 @@ export class StellaswapPoolData {
 
   @Column({ type: 'text' })
   token_rewards: string;
-
-  @Column({ length: 50 })
-  timestamp: string;
 
   @Column({ type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
   created_at: Date;

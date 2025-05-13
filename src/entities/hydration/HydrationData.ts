@@ -1,6 +1,6 @@
 import { Entity, PrimaryGeneratedColumn, Column } from 'typeorm';
 
-@Entity({ name: 'hydration_data' })
+@Entity({ name: 'Hydration_data' })
 export class HydrationData {
   @PrimaryGeneratedColumn()
   id: number;
@@ -14,23 +14,20 @@ export class HydrationData {
   @Column({ length: 50 })
   symbol: string;
 
-  @Column({ type: 'double' })
+  @Column({ type: 'decimal', precision: 20, scale: 6 })
   farm_apr: number;
 
-  @Column({ type: 'double' })
+  @Column({ type: 'decimal', precision: 20, scale: 6 })
   pool_apr: number;
 
-  @Column({ type: 'double' })
+  @Column({ type: 'decimal', precision: 20, scale: 6 })
   total_apr: number;
 
-  @Column({ type: 'double' })
+  @Column({ type: 'decimal', precision: 20, scale: 6 })
   tvl_usd: number;
 
-  @Column({ type: 'double' })
+  @Column({ type: 'decimal', precision: 20, scale: 6 })
   volume_usd: number;
-
-  @Column({ length: 50 })
-  timestamp: string;
 
   @Column({ type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
   created_at: Date;

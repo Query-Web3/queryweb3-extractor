@@ -1,4 +1,7 @@
-import { processBlocks } from './processor';
+import { processBlocks } from './acala/processor';
+import { processBifrostData } from './bifrost/processor';
+import { processHydrationData } from './hydration/processor';
+import { processStellaswapData } from './stellaswap/processor';
 import { determineBlockRange } from './blockRange';
 import { BatchLog, BatchStatus, BatchType } from '../../entities/BatchLog';
 import { showLastBatchLog, pauseBatch, resumeBatch } from '../common/batchLog';
@@ -20,7 +23,8 @@ export async function extractData(
     batchLog?: BatchLog | null,
     startBlock?: number, 
     endBlock?: number,
-    timeRange?: string
+    timeRange?: string,
+    chain: string = 'acala'
 ): Promise<{processedCount: number, lastProcessedHeight: number | null}> {
     // Check if a batch log is provided. If not, create a new one.
     if (!batchLog) {
@@ -50,8 +54,18 @@ export async function extractData(
         endBlock = range.endBlock;
     }
     
-    // Process the blocks within the specified range and return the result
-    return await processBlocks(batchLog, startBlock, endBlock);
+    // Process the blocks based on chain type
+    switch (chain) {
+        case 'bifrost':
+            return await processBifrostData(batchLog);
+        case 'hydration':
+            return await processHydrationData(batchLog);
+        case 'stellaswap':
+            return await processStellaswapData(batchLog);
+        default:
+            // Default to Acala processing
+            return await processBlocks(batchLog, startBlock, endBlock);
+    }
 }
 
 export const showLastExtractBatchLog = () => showLastBatchLog(BatchType.EXTRACT);
