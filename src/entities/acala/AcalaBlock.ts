@@ -1,9 +1,9 @@
 import { Entity, PrimaryGeneratedColumn, Column, OneToMany } from 'typeorm';
-import { Extrinsic } from './Extrinsic';
-import { Event } from './Event';
+import { Extrinsic } from '../Extrinsic';
+import { Event } from '../Event';
 
 @Entity({ name: 'acala_block' })
-export class Block {
+export class AcalaBlock {
   @PrimaryGeneratedColumn()
   id: number;
 

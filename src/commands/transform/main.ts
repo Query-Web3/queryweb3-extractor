@@ -1,10 +1,10 @@
 import { BatchLog, BatchStatus, BatchType } from '../../entities/BatchLog';
 import { showLastBatchLog, pauseBatch, resumeBatch } from '../common/batchLog';
-import { Block } from '../../entities/Block';
+import { AcalaBlock } from '../../entities/acala/AcalaBlock';
 import { DimToken } from '../../entities/DimToken';
 import { Not, IsNull } from 'typeorm';
-import { Extrinsic } from '../../entities/Extrinsic';
-import { Event } from '../../entities/Event';
+import { AcalaExtrinsic } from '../../entities/acala/AcalaExtrinsic';
+import { AcalaEvent } from '../../entities/acala/AcalaEvent';
 import { initializeDataSource } from './dataSource';
 import { upsertToken, initializeDimensionTables } from './token/tokenProcessor';
 import { processTokenStats } from './token/tokenStatsProcessor';
@@ -49,7 +49,7 @@ export async function transformData(batchLog?: BatchLog) {
         
         try {
             const blockTimer = logger.time('Query latest block');
-            const blockRepo = dataSource.getRepository(Block);
+            const blockRepo = dataSource.getRepository(AcalaBlock);
             logger.info('Querying latest block...');
             const latestBlock = await blockRepo.findOne({ 
                 where: {},
@@ -104,7 +104,7 @@ export async function transformData(batchLog?: BatchLog) {
             ];
 
             const processTimer = logger.time('Process extrinsics');
-            const extrinsics = await dataSource.getRepository(Extrinsic)
+            const extrinsics = await dataSource.getRepository(AcalaExtrinsic)
                 .createQueryBuilder('extrinsic')
                 .where('extrinsic.method IN (:...methods)', { methods: methodsToProcess })
                 .groupBy('extrinsic.params')
@@ -144,7 +144,7 @@ export async function transformData(batchLog?: BatchLog) {
             ];
 
             const eventTimer = logger.time('Process events');
-            const events = await dataSource.getRepository(Event)
+            const events = await dataSource.getRepository(AcalaEvent)
                 .createQueryBuilder('event')
                 .where('LOWER(event.section) IN (:...sections) AND LOWER(event.method) IN (:...methods)', {
                     sections: eventPatterns.map(p => p.section.toLowerCase()),

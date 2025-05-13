@@ -1,7 +1,7 @@
 import { Entity, PrimaryColumn, Column } from 'typeorm';
 
 @Entity({ name: 'etl_control' })
-export class EtlControl {
+export class AcalaEtlControl {
   @PrimaryColumn({ length: 100 })
   taskName: string;
 

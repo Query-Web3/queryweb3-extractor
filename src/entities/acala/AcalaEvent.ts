@@ -1,9 +1,9 @@
 import { Entity, PrimaryGeneratedColumn, Column, ManyToOne } from 'typeorm';
-import { Block } from './Block';
-import { Extrinsic } from './Extrinsic';
+import { AcalaBlock } from './AcalaBlock';
+import { Extrinsic } from '../Extrinsic';
 
 @Entity({ name: 'acala_event' })
-export class Event {
+export class AcalaEvent {
   @PrimaryGeneratedColumn()
   id: number;
 
@@ -28,8 +28,8 @@ export class Event {
   @Column()
   batchId: string;
 
-  @ManyToOne(() => Block, (block) => block.events)
-  block: Block;
+  @ManyToOne(() => AcalaBlock, (block) => block.events)
+  block: AcalaBlock;
 
   @ManyToOne(() => Extrinsic, (extrinsic) => extrinsic.events)
   extrinsic?: Extrinsic;

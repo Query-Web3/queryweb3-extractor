@@ -1,5 +1,5 @@
 import { DataSource } from 'typeorm';
-import { Block } from '../../entities/Block';
+import { AcalaBlock } from '../../entities/acala/AcalaBlock';
 import { initializeDataSource } from './dataSource';
 import { 
     parseTimeRange,
@@ -88,7 +88,7 @@ export async function determineBlockRange(
         // No parameters - auto determine range from DB highest to chain latest
         let dbHighest = 0;
         try {
-            const highestBlock = await (await initializeDataSource()).getRepository(Block)
+            const highestBlock = await (await initializeDataSource()).getRepository(AcalaBlock)
                 .createQueryBuilder('block')
                 .select('MAX(block.number)', 'maxNumber')
                 .getRawOne();

@@ -1,7 +1,7 @@
 import { DataSource } from 'typeorm';
-import { Block } from '../../entities/Block';
-import { Extrinsic } from '../../entities/Extrinsic';
-import { Event } from '../../entities/Event';
+import { AcalaBlock } from '../../entities/acala/AcalaBlock';
+import { AcalaExtrinsic } from '../../entities/acala/AcalaExtrinsic';
+import { AcalaEvent } from '../../entities/acala/AcalaEvent';
 import { ApiPromise } from '@polkadot/api';
 import { initializeDataSource } from './dataSource';
 
@@ -121,7 +121,7 @@ export async function processBlock(
         
         try {
             // Save the block information to the database
-            const blockRecord = await queryRunner.manager.getRepository(Block).save({
+            const blockRecord = await queryRunner.manager.getRepository(AcalaBlock).save({
                 number: block.number,
                 hash: block.hash,
                 batchId,
@@ -131,10 +131,10 @@ export async function processBlock(
             if (extrinsics.length > 0) {
                 // Save each extrinsic to the database if it doesn't already exist
                 const createdExtrinsics = await Promise.all(extrinsics.map(async ext => {
-                    const existing = await queryRunner.manager.getRepository(Extrinsic).findOne({
+                    const existing = await queryRunner.manager.getRepository(AcalaExtrinsic).findOne({
                         where: { blockId: blockRecord.id, index: ext.index }
                     });
-                    return existing || await queryRunner.manager.getRepository(Extrinsic).save({
+                    return existing || await queryRunner.manager.getRepository(AcalaExtrinsic).save({
                         blockId: blockRecord.id,
                         ...ext,
                         batchId
@@ -148,10 +148,10 @@ export async function processBlock(
                         ? createdExtrinsics[phase.asApplyExtrinsic.toNumber()]?.id
                         : null;
                         
-                    if (!await queryRunner.manager.getRepository(Event).findOne({
+                    if (!await queryRunner.manager.getRepository(AcalaEvent).findOne({
                         where: { block: { id: blockRecord.id }, index }
                     })) {
-                        const savedEvent = await queryRunner.manager.getRepository(Event).save({
+                        const savedEvent = await queryRunner.manager.getRepository(AcalaEvent).save({
                             block: { id: blockRecord.id },
                             extrinsic: extrinsicId ? { id: extrinsicId } : undefined,
                             index,
@@ -164,11 +164,11 @@ export async function processBlock(
                         // Update extrinsic status based on events
                         if (extrinsicId && event.section === 'system') {
                             if (event.method === 'ExtrinsicSuccess') {
-                                await queryRunner.manager.getRepository(Extrinsic).update(extrinsicId, {
+                                await queryRunner.manager.getRepository(AcalaExtrinsic).update(extrinsicId, {
                                     status: 'success'
                                 });
                             } else if (event.method === 'ExtrinsicFailed') {
-                                await queryRunner.manager.getRepository(Extrinsic).update(extrinsicId, {
+                                await queryRunner.manager.getRepository(AcalaExtrinsic).update(extrinsicId, {
                                     status: 'failed'
                                 });
                             }
