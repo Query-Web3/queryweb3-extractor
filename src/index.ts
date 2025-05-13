@@ -16,7 +16,8 @@ program
     // Set the description of the CLI tool
     .description('CLI for extracting and transforming Acala blockchain data')
     // Set the version of the CLI tool
-    .version('0.4.0');
+    .version('0.4.0')
+    .option('-c, --chain <string>', 'Specify chain name (acala, hydration, bifrost, stellswap)', 'acala');
 
 // Define a new 'extract' command
 program.command('extract')
@@ -257,3 +258,5 @@ program.parseAsync(process.argv).catch(async (err: Error) => {
     if (transformDataSource.isInitialized) await transformDataSource.destroy();
     process.exit(1);
 });
+
+export { program };
