@@ -6,6 +6,7 @@ import { Logger, LogLevel } from '../../../utils/logger';
 dotenv.config();
 import { getTokenPriceFromOracle } from '../utils';
 import { DimToken } from '../../../entities/DimToken';
+import { FactTokenDailyStat } from '../../../entities/FactTokenDailyStat';
 
 export class DailyStatsProcessor {
     constructor(private repository: TokenStatsRepository, private logger: Logger) {}
@@ -25,13 +26,13 @@ export class DailyStatsProcessor {
 
             const events = await this.repository.eventRepo.createQueryBuilder('event')
                 .where(`(
-                    (event.section = 'Tokens' AND event.method = 'Transfer' AND JSON_EXTRACT(event.data, '$.currencyId') = :tokenAddress) OR
-                    (event.section = 'Balances' AND event.method = 'Transfer' AND JSON_EXTRACT(event.data, '$.currencyId') = :tokenAddress) OR
-                    (event.section = 'Dex' AND event.method = 'Swap' AND JSON_CONTAINS(event.data, :tokenAddress, '$.path')) OR
-                    (event.section = 'Homa' AND event.method = 'Minted' AND JSON_EXTRACT(event.data, '$.currencyId') = :tokenAddress) OR
-                    (event.section = 'Homa' AND event.method = 'Redeemed' AND JSON_EXTRACT(event.data, '$.currencyId') = :tokenAddress) OR
-                    (event.section = 'Rewards' AND event.method = 'Reward' AND event.data IS NOT NULL AND JSON_VALID(event.data) AND JSON_EXTRACT(event.data, '$.currencyId') = :tokenAddress)
-                )`, { tokenAddress: token.address })
+                    (event.section = 'Tokens' AND event.method = 'Transfer' AND event.data LIKE :tokenLike) OR
+                    (event.section = 'Balances' AND event.method = 'Transfer' AND event.data LIKE :tokenLike) OR
+                    (event.section = 'Dex' AND event.method = 'Swap' AND event.data LIKE :tokenLike) OR
+                    (event.section = 'Homa' AND event.method = 'Minted' AND event.data LIKE :tokenLike) OR
+                    (event.section = 'Homa' AND event.method = 'Redeemed' AND event.data LIKE :tokenLike) OR
+                    (event.section = 'Rewards' AND event.method = 'Reward' AND event.data LIKE :tokenLike)
+                )`, { tokenLike: `%${token.address}%` })
                 .getMany();
 
             // Calculate daily volume and txns
@@ -124,29 +125,34 @@ export class DailyStatsProcessor {
                 const txnsQoQ = prevQuarterStat?.txns_count ? 
                     ((dailyTxns - prevQuarterStat.txns_count) / prevQuarterStat.txns_count * 100) : 0;
 
-                const statData = {
-                    token_id: tokenRecord.id,
+                // 确保tokenRecord.id存在且有效
+                if (!tokenRecord?.id) {
+                    throw new Error(`Invalid token record: ID is missing for ${tokenRecord?.symbol || token.symbol}`);
+                }
+
+                // 构建符合实体类型的statData对象
+                const statData: Partial<FactTokenDailyStat> = {
+                    tokenId: tokenRecord.id,
                     date: today,
                     volume: dailyVolume,
-                    volume_usd: dailyVolume * tokenPrice,
-                    txns_count: dailyTxns,
-                    price_usd: tokenPrice,
-                    volume_yoy: volumeYoY,
-                    volume_qoq: volumeQoQ,
-                    txns_yoy: txnsYoY,
-                    txns_qoq: txnsQoQ,
-                    volume_wow: prevWeekStat ?
-                        ((dailyVolume - prevWeekStat.volume) / prevWeekStat.volume * 100) : 0,
-                    volume_mom: prevMonthStat ?
-                        ((dailyVolume - prevMonthStat.volume) / prevMonthStat.volume * 100) : 0
+                    volumeUsd: dailyVolume * tokenPrice,
+                    txnsCount: dailyTxns,
+                    priceUsd: tokenPrice,
+                    volumeYoy: volumeYoY ?? undefined,
+                    volumeQoq: volumeQoQ ?? undefined,
+                    txnsYoy: txnsYoY ?? undefined,
+                    txnsQoq: txnsQoQ
                 };
+
+                // 验证statData中的tokenId
+                if (statData.tokenId === undefined || statData.tokenId === null) {
+                    throw new Error(`Failed to set tokenId in statData for ${token.symbol}`);
+                }
 
                 // 添加详细日志检查statData内容
                 this.logger.debug(`Preparing stat data for ${token.symbol}:`, {
-                    token_id: statData.token_id,
-                    has_token_id: 'token_id' in statData,
-                    statData_keys: Object.keys(statData),
-                    statData_values: Object.values(statData)
+                    tokenId: statData.tokenId,
+                    statData: JSON.stringify(statData, null, 2)
                 });
 
                 if (!existingStat) {
