@@ -31,15 +31,15 @@ export class TokenRepository implements ITokenRepository {
                     const assetType = await this.getOrCreateAssetType(assetTypeRepo, input.type);
 
                     // 构建token数据
-                    const tokenData = {
-                        chainId: 1,
-                        address: input.key,
-                        symbol: input.symbol,
-                        name: input.name,
-                        decimals: input.decimals,
-                        assetTypeId: assetType.id,
-                        updatedAt: new Date()
-                    };
+            const tokenData = {
+                chain_id: 1,
+                address: input.key,
+                symbol: input.symbol,
+                name: input.name,
+                decimals: input.decimals,
+                assetTypeId: assetType.id,
+                updatedAt: new Date()
+            };
 
                     // 执行upsert操作
                     const token = await this.doUpsert(tokenRepo, tokenData);
@@ -82,8 +82,8 @@ export class TokenRepository implements ITokenRepository {
     ): Promise<DimToken> {
         // 先尝试获取现有token
         let token = await repo.createQueryBuilder()
-            .where('chainId = :chainId AND address = :address', {
-                chainId: tokenData.chainId,
+            .where('chain_id = :chainId AND address = :address', {
+                chainId: tokenData.chain_id,
                 address: tokenData.address
             })
             .setLock('pessimistic_write')
