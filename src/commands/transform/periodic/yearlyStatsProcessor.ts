@@ -4,7 +4,9 @@ import { getTokenPriceFromOracle } from '../utils';
 import { DimToken } from '../../../entities/DimToken';
 
 export class YearlyStatsProcessor {
-    constructor(private repository: TokenStatsRepository, private logger: Logger) {}
+    constructor(private repository: TokenStatsRepository, private logger: Logger) {
+        this.logger.setLogLevel(process.env.LOG_LEVEL as LogLevel || LogLevel.INFO);
+    }
 
     public async processToken(token: DimToken) {
         const tokenTimer = this.logger.time(`Process yearly stats for token ${token.symbol}`);

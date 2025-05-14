@@ -4,7 +4,9 @@ import { getTokenPriceFromOracle } from '../utils';
 import { DimToken } from '../../../entities/DimToken';
 
 export class MonthlyStatsProcessor {
-    constructor(private repository: TokenStatsRepository, private logger: Logger) {}
+    constructor(private repository: TokenStatsRepository, private logger: Logger) {
+        this.logger.setLogLevel(process.env.LOG_LEVEL as LogLevel || LogLevel.INFO);
+    }
 
     public async processToken(token: DimToken) {
         const tokenTimer = this.logger.time(`Process monthly stats for token ${token.symbol}`);
@@ -118,13 +120,12 @@ export class MonthlyStatsProcessor {
                 where: { tokenId: token.id, date: today }
             });
 
-            if (!existingMonthlyStat) {
-                this.logger.debug(`Inserting new monthly stat record for ${token.symbol}`, monthlyStat);
-                await this.repository.monthlyStatRepo.insert(monthlyStat);
-            } else {
-                this.logger.debug(`Updating existing monthly stat record for ${token.symbol}`, monthlyStat);
-                await this.repository.monthlyStatRepo.update(existingMonthlyStat.id, monthlyStat);
-            }
+            // 使用upsert操作避免主键冲突
+            await this.repository.monthlyStatRepo.upsert(monthlyStat, {
+                conflictPaths: ['tokenId', 'date'], // 冲突检测字段
+                skipUpdateIfNoValuesChanged: true // 无变化时不更新
+            });
+            this.logger.debug(`Upserted monthly stat record for ${token.symbol}`);
 
             tokenTimer.end();
             return true;

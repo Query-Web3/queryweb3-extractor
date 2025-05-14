@@ -4,10 +4,11 @@ import { getTokenPriceFromOracle } from '../utils';
 import { DimToken } from '../../../entities/DimToken';
 
 export class WeeklyStatsProcessor {
-    constructor(private repository: TokenStatsRepository, private logger: Logger) {}
+    constructor(private repository: TokenStatsRepository, private logger: Logger) {
+        this.logger.setLogLevel(process.env.LOG_LEVEL as LogLevel || LogLevel.INFO);
+    }
 
     public async processToken(token: DimToken) {
-        this.logger.setLogLevel(process.env.LOGGER_LEVEL as LogLevel || LogLevel.INFO);
         const tokenTimer = this.logger.time(`Process weekly stats for token ${token.symbol}`);
         this.logger.info(`Processing weekly stats for token ${token.symbol} (${token.address})`);
         

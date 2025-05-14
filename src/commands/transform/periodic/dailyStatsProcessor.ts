@@ -9,12 +9,11 @@ import { DimToken } from '../../../entities/DimToken';
 import { FactTokenDailyStat } from '../../../entities/FactTokenDailyStat';
 
 export class DailyStatsProcessor {
-    constructor(private repository: TokenStatsRepository, private logger: Logger) {}
+    constructor(private repository: TokenStatsRepository, private logger: Logger) {
+        this.logger.setLogLevel(process.env.LOG_LEVEL as LogLevel || LogLevel.INFO);
+    }
 
     public async processToken(token: DimToken) {
-        const logLevel = process.env.LOGGER_LEVEL as LogLevel || LogLevel.INFO;
-        this.logger.setLogLevel(logLevel);
-        this.logger.debug(`Logger initialized with level: ${logLevel}`);
         const tokenTimer = this.logger.time(`Process token ${token.symbol}`);
         this.logger.info(`Processing daily stats for token ${token.symbol} (${token.address})`);
         
