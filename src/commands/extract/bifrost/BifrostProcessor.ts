@@ -42,30 +42,62 @@ export class BifrostProcessor extends BaseProcessor<{
         batchRecord.chain = 'bifrost';
         batchRecord.status = 'success';
         batchRecord.created_at = new Date();
-        await this.dataSource.getRepository(BifrostBatchIDTable).save(batchRecord);
-
-        for (const item of data) {
-            if (item.asset) { // Site data
-                const record = new BifrostSiteTable();
-                Object.assign(record, item);
-                record.batch_id = this.numericBatchId;
-                record.created_at = new Date();
-                await this.dataSource.getRepository(BifrostSiteTable).save(record);
-            } else if (item.assetId) { // Staking data
-                const record = new BifrostStakingTable();
-                Object.assign(record, item);
-                record.batch_id = this.numericBatchId;
-                record.created_at = new Date();
-                await this.dataSource.getRepository(BifrostStakingTable).save(record);
-            } else { // Price data
-                const record = new BifrostPriceTable();
-                record.batch_id = this.numericBatchId;
-                record.asset_id = item.assetId || '';
-                record.symbol = item.symbol || '';
-                record.price_usdt = item.price || 0;
-                record.created_at = new Date();
-                await this.dataSource.getRepository(BifrostPriceTable).save(record);
+        
+        // Start transaction
+        const queryRunner = this.dataSource.createQueryRunner();
+        await queryRunner.connect();
+        await queryRunner.startTransaction();
+        
+        try {
+            // Save batch record
+            await queryRunner.manager.save(BifrostBatchIDTable, batchRecord);
+            
+            // Batch save by data type
+            const siteRecords = [];
+            const stakingRecords = [];
+            const priceRecords = [];
+            
+            for (const item of data) {
+                if (item.asset) { // Site data
+                    const record = new BifrostSiteTable();
+                    Object.assign(record, item);
+                    record.batch_id = this.numericBatchId;
+                    record.created_at = new Date();
+                    siteRecords.push(record);
+                } else if (item.assetId) { // Staking data
+                    const record = new BifrostStakingTable();
+                    Object.assign(record, item);
+                    record.batch_id = this.numericBatchId;
+                    record.created_at = new Date();
+                    stakingRecords.push(record);
+                } else { // Price data
+                    const record = new BifrostPriceTable();
+                    record.batch_id = this.numericBatchId;
+                    record.asset_id = item.assetId || '';
+                    record.symbol = item.symbol || '';
+                    record.price_usdt = item.price || 0;
+                    record.created_at = new Date();
+                    priceRecords.push(record);
+                }
             }
+            
+            // Batch insert
+            if (siteRecords.length > 0) {
+                await queryRunner.manager.save(BifrostSiteTable, siteRecords);
+            }
+            if (stakingRecords.length > 0) {
+                await queryRunner.manager.save(BifrostStakingTable, stakingRecords);
+            }
+            if (priceRecords.length > 0) {
+                await queryRunner.manager.save(BifrostPriceTable, priceRecords);
+            }
+            
+            await queryRunner.commitTransaction();
+        } catch (err) {
+            await queryRunner.rollbackTransaction();
+            throw err;
+        } finally {
+            await queryRunner.release();
         }
     }
 

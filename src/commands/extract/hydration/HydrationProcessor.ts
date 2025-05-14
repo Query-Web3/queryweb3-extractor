@@ -44,19 +44,34 @@ export class HydrationProcessor extends BaseProcessor<Record<string, number>> {
     }
 
     protected async saveData(data: any[]): Promise<void> {
-        for (const item of data) {
-            const record = new HydrationData();
-            record.batch_id = this.numericBatchId;
-            record.asset_id = item.asset_id;
-            record.symbol = item.symbol || 'N/A';
-            record.farm_apr = item.farm_apr;
-            record.pool_apr = item.pool_apr;
-            record.total_apr = item.total_apr;
-            record.tvl_usd = item.tvl_usd;
-            record.volume_usd = item.volume_usd;
-            record.created_at = new Date();
+        // Start transaction
+        const queryRunner = this.dataSource.createQueryRunner();
+        await queryRunner.connect();
+        await queryRunner.startTransaction();
+        
+        try {
+            const records = data.map(item => {
+                const record = new HydrationData();
+                record.batch_id = this.numericBatchId;
+                record.asset_id = item.asset_id;
+                record.symbol = item.symbol || 'N/A';
+                record.farm_apr = item.farm_apr;
+                record.pool_apr = item.pool_apr;
+                record.total_apr = item.total_apr;
+                record.tvl_usd = item.tvl_usd;
+                record.volume_usd = item.volume_usd;
+                record.created_at = new Date();
+                return record;
+            });
             
-            await this.dataSource.getRepository(HydrationData).save(record);
+            // Batch insert
+            await queryRunner.manager.save(HydrationData, records);
+            await queryRunner.commitTransaction();
+        } catch (err) {
+            await queryRunner.rollbackTransaction();
+            throw err;
+        } finally {
+            await queryRunner.release();
         }
     }
 

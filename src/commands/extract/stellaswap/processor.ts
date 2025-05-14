@@ -171,14 +171,30 @@ async function saveStellaswapData(
     batchId: number,
     data: any[]
 ) {
-    for (const item of data) {
-        const record = new StellaswapPoolData();
-        Object.assign(record, {
-            batch_id: batchId,
-            ...item,
-            created_at: new Date()
+    // Start transaction
+    const queryRunner = dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+    
+    try {
+        const records = data.map(item => {
+            const record = new StellaswapPoolData();
+            Object.assign(record, {
+                batch_id: batchId,
+                ...item,
+                created_at: new Date()
+            });
+            return record;
         });
-        await dataSource.getRepository(StellaswapPoolData).save(record);
+        
+        // Batch insert
+        await queryRunner.manager.save(StellaswapPoolData, records);
+        await queryRunner.commitTransaction();
+    } catch (err) {
+        await queryRunner.rollbackTransaction();
+        throw err;
+    } finally {
+        await queryRunner.release();
     }
 }
 
