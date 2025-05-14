@@ -1,7 +1,7 @@
 import os from 'os';
 import { initializeDataSource } from './dataSource';
-import { processBlock } from './blockProcessor';
 import { AcalaBlock } from '../../entities/acala/AcalaBlock';
+import { AcalaProcessor } from './acala/AcalaProcessor';
 
 /**
  * Calculates optimal concurrency settings based on CPU cores
@@ -69,69 +69,19 @@ export async function processChunk(
     api: any,
     batchId: string
 ) {
-    console.log(`Processing chunk of ${chunk.length} blocks (${chunk[0].number} to ${chunk[chunk.length-1].number})`);
-    
-    // Progress tracking
-    const progressMap = new Map<number, {current: number, total: number}>();
-    let lastProgressUpdate = 0;
-    
-    // Assign unique ID to each worker
-    let workerId = 0;
-    
-    // Process all blocks in current group in parallel
-    const results = await Promise.all(chunk.map(block => {
-        const currentWorkerId = workerId++;
-        progressMap.set(currentWorkerId, {
-            current: 0,
-            total: chunk.length
-        });
+    try {
+        const processor = new AcalaProcessor();
+        processor.setApi(api);
+        processor.setBatchId(batchId);
         
-        return processBlock(block, currentWorkerId, api, batchId)
-            .then(result => {
-                // Update progress when completed
-                const progress = progressMap.get(currentWorkerId);
-                if (progress) {
-                    progress.current++;
-                    const currentBlock = block.number;
-                    const startBlock = chunk[0].number;
-                    const endBlock = chunk[chunk.length - 1].number;
-                }
-                return result;
-            });
-    }));
-
-    // Filter out any failed results (where error exists) and ensure they have number property
-    const successfulResults = results.filter(r => !r.error && typeof r.number === 'number');
-    const failedCount = results.length - successfulResults.length;
-    
-    if (failedCount > 0) {
-        console.warn(`Failed to process ${failedCount}/${chunk.length} blocks in current chunk`);
+        console.log(`Processing chunk of ${chunk.length} blocks (${chunk[0].number} to ${chunk[chunk.length-1].number})`);
+        
+        // Process all blocks in current group
+        await processor.saveData(chunk);
+        
+        return chunk.length;
+    } catch (e) {
+        console.error('Failed to process chunk:', e);
+        return 0;
     }
-    
-    // Sort successful results by block number
-    const sortedResults = successfulResults
-        .sort((a, b) => {
-            if (typeof a.number !== 'number' || typeof b.number !== 'number') return 0;
-            return a.number - b.number;
-        });
-    
-    // Batch write sorted results to database with buffering
-    if (sortedResults.length > 0) {
-        try {
-            const dataSource = await initializeDataSource();
-            const blockRepository = dataSource.getRepository(AcalaBlock);
-            
-            // Use bulk insert with batch size of 100
-            const BATCH_SIZE = 100;
-            for (let i = 0; i < sortedResults.length; i += BATCH_SIZE) {
-                const batch = sortedResults.slice(i, i + BATCH_SIZE);
-                await blockRepository.insert(batch);
-                console.log(`Saved blocks ${batch[0].number} to ${batch[batch.length-1].number} (${batch.length} blocks)`);
-            }
-        } catch (e) {
-            console.error('Failed to save blocks to database:', e);
-        }
-    }
-    
-    return successfulResults.length;
 }

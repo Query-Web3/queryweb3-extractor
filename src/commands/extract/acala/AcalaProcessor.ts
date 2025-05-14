@@ -8,6 +8,15 @@ import { determineBlockRange } from '../blockRange';
 
 export class AcalaProcessor extends BaseProcessor<{startBlock: number, endBlock: number}> {
     private api?: ApiPromise;
+    private currentBatchId?: string;
+
+    public setApi(api: ApiPromise): void {
+        this.api = api;
+    }
+
+    public setBatchId(batchId: string): void {
+        this.currentBatchId = batchId;
+    }
 
     protected getProcessorName(): string {
         return 'Acala';
@@ -74,12 +83,12 @@ export class AcalaProcessor extends BaseProcessor<{startBlock: number, endBlock:
         return blocks;
     }
 
-    protected async saveData(blocks: any[]): Promise<void> {
-        if (!this.api || blocks.length === 0) return;
+    public async saveData(blocks: any[]): Promise<void> {
+        if (!this.api || !this.currentBatchId || blocks.length === 0) return;
         
         const chunks = this.splitIntoChunks(blocks);
         for (const chunk of chunks) {
-            await processChunk(chunk, this.api, this.batchId);
+            await processChunk(chunk, this.api, this.currentBatchId);
         }
     }
 
