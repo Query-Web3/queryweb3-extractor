@@ -18,8 +18,9 @@ export class TokenRepository implements ITokenRepository {
         await queryRunner.connect();
 
         try {
-            let retries = 3;
+            let retries = 5; // 增加重试次数
             let lastError: Error | null = null;
+            let delay = 100; // 初始延迟100ms
             
             while (retries-- > 0) {
                 await queryRunner.startTransaction();
@@ -30,16 +31,20 @@ export class TokenRepository implements ITokenRepository {
                     // 获取或创建assetType
                     const assetType = await this.getOrCreateAssetType(assetTypeRepo, input.type);
 
-                    // 构建token数据
-            const tokenData = {
-                chain_id: 1,
-                address: input.key,
-                symbol: input.symbol,
-                name: input.name,
-                decimals: input.decimals,
-                assetTypeId: assetType.id,
-                updatedAt: new Date()
-            };
+                    // 构建token数据 - 确保chain_id有有效值
+                    const chainId = typeof input.rawData?.chainId === 'number' 
+                        ? input.rawData.chainId 
+                        : 1; // 默认Acala链
+                    
+                    const tokenData = {
+                        chain_id: chainId,
+                        address: input.key,
+                        symbol: input.symbol,
+                        name: input.name,
+                        decimals: input.decimals,
+                        asset_type_id: assetType.id, // 使用数据库列名
+                        updated_at: new Date() // 使用数据库列名
+                    };
 
                     // 执行upsert操作
                     const token = await this.doUpsert(tokenRepo, tokenData);
@@ -48,10 +53,15 @@ export class TokenRepository implements ITokenRepository {
                 } catch (error) {
                     await queryRunner.rollbackTransaction();
                     lastError = error as Error;
+                    if (retries > 0) {
+                        // 指数退避策略
+                        await new Promise(resolve => setTimeout(resolve, delay));
+                        delay = Math.min(delay * 2, 2000); // 最大延迟2秒
+                    }
                     continue;
                 }
             }
-            throw lastError || new Error(`Failed to upsert token after 3 retries`);
+            throw lastError || new Error(`Failed to upsert token after 5 retries`);
         } finally {
             await queryRunner.release();
         }
@@ -80,19 +90,36 @@ export class TokenRepository implements ITokenRepository {
         repo: any,
         tokenData: any
     ): Promise<DimToken> {
-        // 先尝试获取现有token
-        let token = await repo.createQueryBuilder()
-            .where('chain_id = :chainId AND address = :address', {
+        // 使用更短的锁持有时间
+        let token = await repo.findOne({
+            where: {
                 chainId: tokenData.chain_id,
                 address: tokenData.address
-            })
-            .setLock('pessimistic_write')
-            .getOne();
+            },
+            lock: { mode: 'pessimistic_write' }
+        });
 
         if (!token) {
-            token = await repo.save(tokenData);
+            token = await repo.save(repo.create({
+                chainId: tokenData.chain_id,
+                address: tokenData.address,
+                symbol: tokenData.symbol,
+                name: tokenData.name,
+                decimals: tokenData.decimals,
+                assetTypeId: tokenData.asset_type_id,
+                updatedAt: tokenData.updated_at
+            }));
         } else {
-            token = await repo.save({ ...token, ...tokenData });
+            await repo.update(token.id, {
+                chainId: tokenData.chain_id,
+                address: tokenData.address,
+                symbol: tokenData.symbol,
+                name: tokenData.name,
+                decimals: tokenData.decimals,
+                assetTypeId: tokenData.asset_type_id,
+                updatedAt: tokenData.updated_at
+            });
+            token = await repo.findOneBy({ id: token.id });
         }
 
         if (!token?.id) {
