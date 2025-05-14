@@ -68,20 +68,38 @@ export class MonthlyStatsProcessor {
                 where: { tokenId: tokenRecord.id, date: new Date(today.setFullYear(today.getFullYear() - 1)) } 
             });
 
-            // Calculate YoY and QoQ changes
-            const volumeYoY = prevYearStat ? 
-                ((monthlyVolume - prevYearStat.volume) / prevYearStat.volume * 100) : 0;
-            const txnsYoY = prevYearStat ? 
-                ((monthlyTxns - prevYearStat.txnsCount) / prevYearStat.txnsCount * 100) : 0;
-            
-            // Calculate QoQ changes (previous quarter = 3 months ago)
+            // 获取季度数据 (3个月前)
             const prevQuarterStat = await this.repository.monthlyStatRepo.findOne({ 
                 where: { tokenId: token.id, date: new Date(today.setMonth(today.getMonth() - 3)) } 
             });
-            const volumeQoQ = prevQuarterStat ? 
-                ((monthlyVolume - prevQuarterStat.volume) / prevQuarterStat.volume * 100) : 0;
-            const txnsQoQ = prevQuarterStat ? 
-                ((monthlyTxns - prevQuarterStat.txnsCount) / prevQuarterStat.txnsCount * 100) : 0;
+
+            // 检查数据完整性
+            const hasFullMonthData = prevMonthStat && 
+                (new Date().getTime() - prevMonthStat.date.getTime()) > 30 * 24 * 60 * 60 * 1000;
+            const hasFullYearData = prevYearStat && 
+                (new Date().getTime() - prevYearStat.date.getTime()) > 365 * 24 * 60 * 60 * 1000;
+            const hasFullQuarterData = prevQuarterStat && 
+                (new Date().getTime() - prevQuarterStat.date.getTime()) > 90 * 24 * 60 * 60 * 1000;
+
+            // 处理同比环比数据
+            let volumeYoY = 0;
+            let txnsYoY = 0;
+            let volumeQoQ = 0;
+            let txnsQoQ = 0;
+
+            if (!hasFullYearData) {
+                this.logger.warn(`Insufficient yearly data for ${token.symbol}, using 0% for YoY comparison`);
+            } else {
+                volumeYoY = ((monthlyVolume - prevYearStat.volume) / prevYearStat.volume * 100);
+                txnsYoY = ((monthlyTxns - prevYearStat.txnsCount) / prevYearStat.txnsCount * 100);
+            }
+
+            if (!hasFullQuarterData) {
+                this.logger.warn(`Insufficient quarterly data for ${token.symbol}, using 0% for QoQ comparison`);
+            } else {
+                volumeQoQ = ((monthlyVolume - prevQuarterStat.volume) / prevQuarterStat.volume * 100);
+                txnsQoQ = ((monthlyTxns - prevQuarterStat.txnsCount) / prevQuarterStat.txnsCount * 100);
+            }
 
             const monthlyStat = {
                 tokenId: tokenRecord.id,

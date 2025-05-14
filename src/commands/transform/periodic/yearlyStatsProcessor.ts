@@ -65,15 +65,27 @@ export class YearlyStatsProcessor {
                 where: { tokenId: tokenRecord.id, date: new Date(today.setFullYear(today.getFullYear() - 2)) } 
             });
             
-            // Safe calculation with checks for zero and NaN
-            const calculateChange = (current: number, previous: number | undefined) => {
-                if (!previous || previous === 0) return 0;
-                const change = ((current - previous) / previous) * 100;
-                return isFinite(change) ? change : 0;
-            };
+            // 检查数据完整性
+            const hasFullYearData = prevYearStat && 
+                (new Date().getTime() - prevYearStat.date.getTime()) > 365 * 24 * 60 * 60 * 1000;
 
-            const volumeYoY = calculateChange(yearlyVolume, prevYearStat?.volume);
-            const txnsYoY = calculateChange(yearlyTxns, prevYearStat?.txnsCount);
+            // 处理同比数据
+            let volumeYoY = 0;
+            let txnsYoY = 0;
+
+            if (!hasFullYearData) {
+                this.logger.warn(`Insufficient yearly data for ${token.symbol}, using 0% for YoY comparison`);
+            } else {
+                // Safe calculation with checks for zero and NaN
+                const calculateChange = (current: number, previous: number) => {
+                    if (previous === 0) return 0;
+                    const change = ((current - previous) / previous) * 100;
+                    return isFinite(change) ? change : 0;
+                };
+
+                volumeYoY = calculateChange(yearlyVolume, prevYearStat.volume);
+                txnsYoY = calculateChange(yearlyTxns, prevYearStat.txnsCount);
+            }
 
             const yearlyStat = {
                 tokenId: tokenRecord.id,

@@ -80,13 +80,29 @@ export class DailyStatsProcessor {
                 where: { tokenId: token.id, date: new Date(today.setFullYear(today.getFullYear() - 1)) } 
             });
 
-            // Calculate YoY/QoQ changes
-            const volumeYoY = prevYearStat ? 
-                ((dailyVolume - prevYearStat.volume) / prevYearStat.volume * 100) : null;
-            const volumeQoQ = prevDayStat ? 
-                ((dailyVolume - prevDayStat.volume) / prevDayStat.volume * 100) : null;
-            const txnsYoY = prevYearStat ? 
-                ((dailyTxns - prevYearStat.txnsCount) / prevYearStat.txnsCount * 100) : null;
+            // 检查数据完整性
+            const hasFullYearData = prevYearStat && 
+                (new Date().getTime() - prevYearStat.date.getTime()) > 365 * 24 * 60 * 60 * 1000;
+            const hasFullDayData = prevDayStat && 
+                (new Date().getTime() - prevDayStat.date.getTime()) > 24 * 60 * 60 * 1000;
+
+            // 处理同比环比数据
+            let volumeYoY = 0;
+            let volumeQoQ = 0;
+            let txnsYoY = 0;
+
+            if (!hasFullYearData) {
+                this.logger.warn(`Insufficient yearly data for ${token.symbol}, using 0% for YoY comparison`);
+            } else {
+                volumeYoY = ((dailyVolume - prevYearStat.volume) / prevYearStat.volume * 100);
+                txnsYoY = ((dailyTxns - prevYearStat.txnsCount) / prevYearStat.txnsCount * 100);
+            }
+
+            if (!hasFullDayData) {
+                this.logger.warn(`Insufficient daily data for ${token.symbol}, using 0% for QoQ comparison`);
+            } else {
+                volumeQoQ = ((dailyVolume - prevDayStat.volume) / prevDayStat.volume * 100);
+            }
 
             // Get or create today's stat
             const existingStat = await this.repository.dailyStatRepo.findOne({

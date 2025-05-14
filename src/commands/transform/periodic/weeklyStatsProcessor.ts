@@ -54,12 +54,6 @@ export class WeeklyStatsProcessor {
                 where: { tokenId: token.id, date: new Date(today.setFullYear(today.getFullYear() - 1)) } 
             });
 
-            // Calculate YoY changes
-            const volumeYoY = prevYearStat ? 
-                ((weeklyVolume - prevYearStat.volume) / prevYearStat.volume * 100) : undefined;
-            const txnsYoY = prevYearStat ? 
-                ((weeklyTxns - prevYearStat.txnsCount) / prevYearStat.txnsCount * 100) : undefined;
-
             // Find token in dim_tokens table by symbol or name
             const tokenRecord = await this.repository.tokenRepo.findOne({
                 where: [
@@ -75,11 +69,31 @@ export class WeeklyStatsProcessor {
 
             this.logger.debug(`Found matching token record for ${token.symbol}: ID=${tokenRecord.id}`);
 
-            // Calculate QoQ changes
-            const volumeQoQ = prevWeekStat ? 
-                ((weeklyVolume - prevWeekStat.volume) / prevWeekStat.volume * 100) : 0;
-            const txnsQoQ = prevWeekStat ? 
-                ((weeklyTxns - prevWeekStat.txnsCount) / prevWeekStat.txnsCount * 100) : 0;
+            // 检查数据完整性
+            const hasFullWeekData = prevWeekStat && 
+                (new Date().getTime() - prevWeekStat.date.getTime()) > 7 * 24 * 60 * 60 * 1000;
+            const hasFullYearData = prevYearStat && 
+                (new Date().getTime() - prevYearStat.date.getTime()) > 365 * 24 * 60 * 60 * 1000;
+
+            // 处理同比环比数据
+            let volumeYoY = 0;
+            let txnsYoY = 0;
+            let volumeQoQ = 0;
+            let txnsQoQ = 0;
+
+            if (!hasFullYearData) {
+                this.logger.warn(`Insufficient yearly data for ${token.symbol}, using 0% for YoY comparison`);
+            } else {
+                volumeYoY = ((weeklyVolume - prevYearStat.volume) / prevYearStat.volume * 100);
+                txnsYoY = ((weeklyTxns - prevYearStat.txnsCount) / prevYearStat.txnsCount * 100);
+            }
+
+            if (!hasFullWeekData) {
+                this.logger.warn(`Insufficient weekly data for ${token.symbol}, using 0% for QoQ comparison`);
+            } else {
+                volumeQoQ = ((weeklyVolume - prevWeekStat.volume) / prevWeekStat.volume * 100);
+                txnsQoQ = ((weeklyTxns - prevWeekStat.txnsCount) / prevWeekStat.txnsCount * 100);
+            }
 
             const weeklyStat = {
                 tokenId: tokenRecord.id,
