@@ -79,28 +79,65 @@ export class HydrationProcessor extends BaseProcessor<Record<string, number>> {
         return Date.now();
     }
 
-    private async fetchPoolApr(assetId: string): Promise<number> {
-        const response = await axios.get(`https://api.hydradx.io/hydradx-ui/v2/stats/fees/${assetId}`);
-        if (response.status === 200 && response.data?.length > 0) {
-            return parseFloat(response.data[0].projected_apr_perc) || 0;
+    private async fetchWithRetry(url: string, maxRetries = 3): Promise<any> {
+        let retries = 0;
+        while (retries < maxRetries) {
+            try {
+                const response = await axios.get(url, {
+                    timeout: 10000,
+                    headers: {
+                        'Accept': 'application/json',
+                        'Cache-Control': 'no-cache'
+                    }
+                });
+                if (response.status === 200) {
+                    return response.data;
+                }
+            } catch (error) {
+                this.logger.warn(`Attempt ${retries + 1} failed for ${url}: ${error}`);
+            }
+            retries++;
+            if (retries < maxRetries) {
+                await new Promise(resolve => setTimeout(resolve, 1000 * retries));
+            }
         }
-        return 0;
+        throw new Error(`Failed to fetch data from ${url} after ${maxRetries} attempts`);
+    }
+
+    private async fetchPoolApr(assetId: string): Promise<number> {
+        try {
+            const data = await this.fetchWithRetry(
+                `https://api.hydradx.io/hydradx-ui/v2/stats/fees/${assetId}`
+            );
+            return parseFloat(data?.[0]?.projected_apr_perc) || 0;
+        } catch (error) {
+            this.logger.error(`Failed to fetch pool APR for ${assetId}: ${error}`);
+            return 0;
+        }
     }
 
     private async fetchTvl(assetId: string): Promise<number> {
-        const response = await axios.get(`https://api.hydradx.io/hydradx-ui/v2/stats/tvl/${assetId}`);
-        if (response.status === 200 && response.data?.length > 0) {
-            return parseFloat(response.data[0].tvl_usd) || 0;
+        try {
+            const data = await this.fetchWithRetry(
+                `https://api.hydradx.io/hydradx-ui/v2/stats/tvl/${assetId}`
+            );
+            return parseFloat(data?.[0]?.tvl_usd) || 0;
+        } catch (error) {
+            this.logger.error(`Failed to fetch TVL for ${assetId}: ${error}`);
+            return 0;
         }
-        return 0;
     }
 
     private async fetchVolume(assetId: string): Promise<number> {
-        const response = await axios.get(`https://api.hydradx.io/hydradx-ui/v1/stats/charts/volume/${assetId}`);
-        if (response.status === 200 && response.data?.length > 0) {
-            return parseFloat(response.data[response.data.length - 1].volume_usd) || 0;
+        try {
+            const data = await this.fetchWithRetry(
+                `https://api.hydradx.io/hydradx-ui/v1/stats/charts/volume/${assetId}`
+            );
+            return parseFloat(data?.[data.length - 1]?.volume_usd) || 0;
+        } catch (error) {
+            this.logger.error(`Failed to fetch volume for ${assetId}: ${error}`);
+            return 0;
         }
-        return 0;
     }
 }
 

@@ -94,10 +94,36 @@ async function fetchFarmingAprData(): Promise<Record<string, any>> {
     }
 }
 
+async function fetchWithRetry(url: string, query: string, maxRetries = 3): Promise<any> {
+    let retries = 0;
+    while (retries < maxRetries) {
+        try {
+            const response = await axios.post(url, { query }, {
+                timeout: 15000,
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'Cache-Control': 'no-cache'
+                }
+            });
+            if (response.status === 200) {
+                return response.data;
+            }
+        } catch (error) {
+            console.warn(`Attempt ${retries + 1} failed for GraphQL query: ${error}`);
+        }
+        retries++;
+        if (retries < maxRetries) {
+            await new Promise(resolve => setTimeout(resolve, 2000 * retries));
+        }
+    }
+    throw new Error(`Failed to execute GraphQL query after ${maxRetries} attempts`);
+}
+
 async function fetchPoolData(): Promise<any> {
     const graphUrl = process.env.STELLASWAP_GRAPH_URL || "";
     const query = `{
-        pools(first: 55) {
+        pools(first: 55, orderBy: volumeUSD, orderDirection: desc) {
             id
             token0 { id symbol name decimals }
             token1 { id symbol name decimals }
@@ -107,18 +133,11 @@ async function fetchPoolData(): Promise<any> {
             volumeUSD
             txCount
             feesUSD
+            totalValueLockedUSD
         }
     }`;
 
-    try {
-        const response = await axios.post(graphUrl, { query });
-        if (response.status === 200) {
-            return response.data;
-        }
-        throw new Error(`Failed to fetch pool data: ${response.status}`);
-    } catch (error) {
-        throw new Error(`Error fetching pool data: ${error}`);
-    }
+    return fetchWithRetry(graphUrl, query);
 }
 
 async function processPoolData(

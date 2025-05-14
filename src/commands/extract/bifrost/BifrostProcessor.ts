@@ -105,32 +105,54 @@ export class BifrostProcessor extends BaseProcessor<{
         return Date.now();
     }
 
-    private async fetchSiteData(): Promise<any[]> {
-        const response = await axios.get('https://dapi.bifrost.io/api/site');
-        if (response.status === 200) {
-            const data = response.data;
-            return Object.entries(data).map(([key, value]) => ({
-                asset: key,
-                ...(typeof value === 'object' ? value : { value })
-            }));
+    private async fetchWithRetry(url: string, maxRetries = 3): Promise<any> {
+        let retries = 0;
+        while (retries < maxRetries) {
+            try {
+                const response = await axios.get(url, {
+                    timeout: 10000,
+                    headers: {
+                        'Accept': 'application/json',
+                        'Cache-Control': 'no-cache'
+                    }
+                });
+                if (response.status === 200) {
+                    return response.data;
+                }
+            } catch (error) {
+                this.logger.warn(`Attempt ${retries + 1} failed for ${url}: ${error}`);
+            }
+            retries++;
+            if (retries < maxRetries) {
+                await new Promise(resolve => setTimeout(resolve, 1000 * retries));
+            }
         }
-        throw new Error(`Failed to fetch site data: ${response.status}`);
+        throw new Error(`Failed to fetch data from ${url} after ${maxRetries} attempts`);
+    }
+
+    private async fetchSiteData(): Promise<any[]> {
+        const data = await this.fetchWithRetry('https://dapi.bifrost.io/api/site');
+        return Object.entries(data).map(([key, value]) => ({
+            asset: key,
+            ...(typeof value === 'object' ? value : { value }),
+            timestamp: new Date().toISOString()
+        }));
     }
 
     private async fetchStakingData(): Promise<any[]> {
-        const response = await axios.get('https://dapi.bifrost.io/api/staking');
-        if (response.status === 200) {
-            return response.data?.supportedAssets || [];
-        }
-        throw new Error(`Failed to fetch staking data: ${response.status}`);
+        const data = await this.fetchWithRetry('https://dapi.bifrost.io/api/staking');
+        return (data?.supportedAssets || []).map((asset: any) => ({
+            ...asset,
+            timestamp: new Date().toISOString()
+        }));
     }
 
     private async fetchPriceData(): Promise<any[]> {
-        const response = await axios.get('https://api.bifrost.io/prices');
-        if (response.status === 200) {
-            return response.data?.prices || [];
-        }
-        throw new Error(`Failed to fetch price data: ${response.status}`);
+        const data = await this.fetchWithRetry('https://api.bifrost.io/prices');
+        return (data?.prices || []).map((price: any) => ({
+            ...price,
+            timestamp: new Date().toISOString()
+        }));
     }
 }
 
