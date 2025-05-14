@@ -16,11 +16,11 @@ import { AcalaEvent } from '../entities/acala/AcalaEvent';
 
 export const transformDataSource = new DataSource({
   type: 'mysql',
-  host: process.env.TRANSFORM_DB_HOST || process.env.DB_HOST,
-  port: parseInt(process.env.TRANSFORM_DB_PORT || process.env.DB_PORT || '3306'),
-  username: process.env.TRANSFORM_DB_USER || process.env.DB_USER,
-  password: process.env.TRANSFORM_DB_PASSWORD || process.env.DB_PASSWORD,
-  database: process.env.TRANSFORM_DB_NAME || process.env.DB_NAME,
+  host: process.env.TRANSFORM_DB_HOST,
+  port: parseInt(process.env.TRANSFORM_DB_PORT || '3306'),
+  username: process.env.TRANSFORM_DB_USER,
+  password: process.env.TRANSFORM_DB_PASSWORD,
+  database: process.env.TRANSFORM_DB_NAME,
   entities: [
     DimChain,
     DimAssetType,

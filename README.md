@@ -356,16 +356,22 @@ pm2 logs
 
 ### Configuration options (in `.env`):
 - Database Connection (Required):
-  - `EXTRACT_DB_HOST`: Extract database host (default: "127.0.0.1")
-  - `EXTRACT_DB_PORT`: Extract database port (default: "3306")
-  - `EXTRACT_DB_USER`: Extract database username (default: "root")
-  - `EXTRACT_DB_PASSWORD`: Extract database password (default: "password")
-  - `EXTRACT_DB_NAME`: Extract database name (default: "QUERYWEB3")
-  - `TRANSFORM_DB_HOST`: Transform database host (default: "127.0.0.1")
-  - `TRANSFORM_DB_PORT`: Transform database port (default: "3306")
-  - `TRANSFORM_DB_USER`: Transform database username (default: "root")
-  - `TRANSFORM_DB_PASSWORD`: Transform database password (default: "password")
-  - `TRANSFORM_DB_NAME`: Transform database name (default: "QUERYWEB3")
+  - Extract Process (must use EXTRACT_DB_ prefix):
+    - `EXTRACT_DB_HOST`: Extract database host (required)
+    - `EXTRACT_DB_PORT`: Extract database port (default: "3306")
+    - `EXTRACT_DB_USER`: Extract database username (required)
+    - `EXTRACT_DB_PASSWORD`: Extract database password (required)
+    - `EXTRACT_DB_NAME`: Extract database name (required)
+  
+  - Transform Process (must use TRANSFORM_DB_ prefix):
+    - `TRANSFORM_DB_HOST`: Transform database host (required)
+    - `TRANSFORM_DB_PORT`: Transform database port (default: "3306")
+    - `TRANSFORM_DB_USER`: Transform database username (required)
+    - `TRANSFORM_DB_PASSWORD`: Transform database password (required)
+    - `TRANSFORM_DB_NAME`: Transform database name (required)
+  
+  Note: The extract and transform processes now require their own dedicated database connections. 
+  The fallback to generic DB_ variables has been removed to prevent configuration errors.
 
 - Task Scheduling:
   - `EXTRACT_INTERVAL_MS`: Extract polling interval in milliseconds (default: 3600000 - 1 hour)
