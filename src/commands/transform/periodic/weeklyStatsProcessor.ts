@@ -19,18 +19,39 @@ export class WeeklyStatsProcessor {
             lastWeek.setDate(lastWeek.getDate() - 7);
 
             // Get weekly events
-            const weeklyEvents = await this.repository.eventRepo.createQueryBuilder('event')
+            // 查询所有相关事件（不包含Rewards事件）
+            const baseEvents = await this.repository.eventRepo.createQueryBuilder('event')
                 .leftJoinAndSelect('event.block', 'block')
-                .where('(event.section = :section1 AND event.method = :method1 AND event.data LIKE :data1) OR ' +
-                       '(event.section = :section2 AND event.method = :method2 AND event.data LIKE :data2) OR ' +
-                       '(event.section = :section3 AND event.method = :method3 AND event.data LIKE :data3)',
+                .where('(event.section = :section1 AND event.method = :method1) OR ' +
+                       '(event.section = :section2 AND event.method = :method2) OR ' +
+                       '(event.section = :section3 AND event.method = :method3)',
                     {
-                        section1: 'Tokens', method1: 'Transfer', data1: `%${token.address}%`,
-                        section2: 'Balances', method2: 'Transfer', data2: `%${token.address}%`, 
-                        section3: 'Dex', method3: 'Swap', data3: `%${token.address}%`
+                        section1: 'Tokens', method1: 'Transfer',
+                        section2: 'Balances', method2: 'Transfer',
+                        section3: 'Dex', method3: 'Swap'
                     })
                 .andWhere('block.timestamp BETWEEN :start AND :end', { start: lastWeek, end: today })
                 .getMany();
+
+            // 单独查询Rewards事件（不添加data条件）
+            const rewardEvents = await this.repository.eventRepo.createQueryBuilder('event')
+                .leftJoinAndSelect('event.block', 'block')
+                .where('event.section = :section AND event.method = :method', {
+                    section: 'Rewards',
+                    method: 'Reward'
+                })
+                .andWhere('block.timestamp BETWEEN :start AND :end', { start: lastWeek, end: today })
+                .getMany();
+
+            // 合并并过滤事件
+            const weeklyEvents = [
+                ...baseEvents.filter(e => JSON.stringify(e.data).includes(`"${token.address}"`)),
+                ...rewardEvents.filter(e => 
+                    e.data && 
+                    typeof e.data === 'object' &&
+                    e.data.currencyId === token.address
+                )
+            ];
 
             const weeklyVolume = weeklyEvents.reduce((sum, event) => {
                 let amount = 0;
@@ -109,28 +130,15 @@ export class WeeklyStatsProcessor {
                 txnsQoq: txnsQoQ
             };
 
-            const existingWeeklyStat = await this.repository.weeklyStatRepo.findOne({
-                where: { tokenId: tokenRecord.id, date: today }
+            // 使用upsert操作确保原子性
+            const result = await this.repository.weeklyStatRepo.upsert(weeklyStat, {
+                conflictPaths: ['tokenId', 'date'],
+                skipUpdateIfNoValuesChanged: true
             });
-
-            if (!existingWeeklyStat) {
-                this.logger.debug(`Inserting new weekly stat record for ${token.symbol}`, {
-                    ...weeklyStat,
-                    tokenSymbol: tokenRecord.symbol,
-                    tokenAddress: tokenRecord.address
-                });
-                const result = await this.repository.weeklyStatRepo.insert(weeklyStat);
-                if (!result.identifiers[0]?.id) {
-                    throw new Error(`Failed to insert weekly stat record for ${token.symbol}`);
-                }
-            } else if (existingWeeklyStat.id) {
-                this.logger.debug(`Updating existing weekly stat record for ${token.symbol}`, weeklyStat);
-                const result = await this.repository.weeklyStatRepo.update(existingWeeklyStat.id, weeklyStat);
-                if (result.affected === 0) {
-                    throw new Error(`Failed to update weekly stat record for ${token.symbol}`);
-                }
-            } else {
-                throw new Error(`Existing weekly stat record has no ID for ${token.symbol}`);
+            
+            this.logger.debug(`Upserted weekly stat for ${token.symbol}:`, result);
+            if (!result.identifiers[0]?.id) {
+                throw new Error(`Failed to upsert weekly stat record for ${token.symbol}`);
             }
 
             tokenTimer.end();

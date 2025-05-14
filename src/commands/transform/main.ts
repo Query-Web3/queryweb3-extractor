@@ -154,7 +154,6 @@ export async function transformData(batchLog?: BatchLog) {
                     sections: eventPatterns.map(p => p.section.toLowerCase()),
                     methods: eventPatterns.map(p => p.method.toLowerCase())
                 })
-                .groupBy('event.data')
                 .getMany();
 
             for (const event of events) {

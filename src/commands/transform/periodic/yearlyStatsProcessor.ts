@@ -21,13 +21,15 @@ export class YearlyStatsProcessor {
             // Get yearly events
             const yearlyEvents = await this.repository.eventRepo.createQueryBuilder('event')
                 .leftJoinAndSelect('event.block', 'block')
-                .where('(event.section = :section1 AND event.method = :method1 AND event.data LIKE :data1) OR ' +
-                       '(event.section = :section2 AND event.method = :method2 AND event.data LIKE :data2) OR ' +
-                       '(event.section = :section3 AND event.method = :method3 AND event.data LIKE :data3)',
+                .where('(event.section = :section1 AND event.method = :method1 AND JSON_CONTAINS(event.data, :data1)) OR ' +
+                       '(event.section = :section2 AND event.method = :method2 AND JSON_CONTAINS(event.data, :data2)) OR ' +
+                       '(event.section = :section3 AND event.method = :method3 AND JSON_CONTAINS(event.data, :data3)) OR ' +
+                       '(event.section = :section4 AND event.method = :method4 AND event.data IS NOT NULL AND JSON_CONTAINS(event.data, :data4))',
                     {
-                        section1: 'Tokens', method1: 'Transfer', data1: `%${token.address}%`,
-                        section2: 'Balances', method2: 'Transfer', data2: `%${token.address}%`, 
-                        section3: 'Dex', method3: 'Swap', data3: `%${token.address}%`
+                        section1: 'Tokens', method1: 'Transfer', data1: JSON.stringify({ currencyId: token.address }),
+                        section2: 'Balances', method2: 'Transfer', data2: JSON.stringify({ currencyId: token.address }),
+                        section3: 'Dex', method3: 'Swap', data3: JSON.stringify({ currencyId: token.address }),
+                        section4: 'Rewards', method4: 'Reward', data4: JSON.stringify({ currencyId: token.address })
                     })
                 .andWhere('block.timestamp BETWEEN :start AND :end', { start: lastYear, end: today })
                 .getMany();
@@ -107,16 +109,15 @@ export class YearlyStatsProcessor {
                 }
             });
 
-            const existingYearlyStat = await this.repository.yearlyStatRepo.findOne({
-                where: { tokenId: token.id, date: today }
+            // 使用upsert操作确保原子性
+            const result = await this.repository.yearlyStatRepo.upsert(yearlyStat, {
+                conflictPaths: ['tokenId', 'date'],
+                skipUpdateIfNoValuesChanged: true
             });
-
-            if (!existingYearlyStat) {
-                this.logger.debug(`Inserting new yearly stat record for ${token.symbol}`, yearlyStat);
-                await this.repository.yearlyStatRepo.insert(yearlyStat);
-            } else {
-                this.logger.debug(`Updating existing yearly stat record for ${token.symbol}`, yearlyStat);
-                await this.repository.yearlyStatRepo.update(existingYearlyStat.id, yearlyStat);
+            
+            this.logger.debug(`Upserted yearly stat for ${token.symbol}:`, result);
+            if (!result.identifiers[0]?.id) {
+                throw new Error(`Failed to upsert yearly stat record for ${token.symbol}`);
             }
 
             tokenTimer.end();

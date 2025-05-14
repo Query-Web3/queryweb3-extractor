@@ -25,13 +25,13 @@ export class DailyStatsProcessor {
 
             const events = await this.repository.eventRepo.createQueryBuilder('event')
                 .where(`(
-                    (event.section = 'Tokens' AND event.method = 'Transfer' AND event.data LIKE :tokenLike) OR
-                    (event.section = 'Balances' AND event.method = 'Transfer' AND event.data LIKE :tokenLike) OR
-                    (event.section = 'Dex' AND event.method = 'Swap' AND event.data LIKE :tokenLike) OR
-                    (event.section = 'Homa' AND event.method = 'Minted' AND event.data LIKE :tokenLike) OR
-                    (event.section = 'Homa' AND event.method = 'Redeemed' AND event.data LIKE :tokenLike) OR
-                    (event.section = 'Rewards' AND event.method = 'Reward' AND event.data LIKE :tokenLike)
-                )`, { tokenLike: `%${token.address}%` })
+                    (event.section = 'Tokens' AND event.method = 'Transfer') OR
+                    (event.section = 'Balances' AND event.method = 'Transfer') OR
+                    (event.section = 'Dex' AND event.method = 'Swap') OR
+                    (event.section = 'Homa' AND event.method = 'Minted') OR
+                    (event.section = 'Homa' AND event.method = 'Redeemed')
+                )`)
+                .andWhere('event.data LIKE :tokenLike', { tokenLike: `%"${token.address}"%` })
                 .getMany();
 
             // Calculate daily volume and txns
@@ -170,24 +170,15 @@ export class DailyStatsProcessor {
                     statData: JSON.stringify(statData, null, 2)
                 });
 
-                if (!existingStat) {
-                    this.logger.debug(`Full stat data for ${token.symbol}:`, JSON.stringify(statData, null, 2));
-                    // 使用insert方法确保所有字段都被显式设置
-                    const result = await this.repository.dailyStatRepo.insert(statData);
-                    this.logger.debug(`Inserted daily stat for ${token.symbol}:`, result);
-                    if (!result.identifiers[0]?.id) {
-                        throw new Error(`Failed to insert daily stat record for ${token.symbol}`);
-                    }
-                    const savedEntity = await this.repository.dailyStatRepo.findOne({
-                        where: { id: result.identifiers[0].id }
-                    });
-                } else if (existingStat.id) {
-                    this.logger.warn(`Updating existing daily stat record for ${token.symbol}`, statData);
-                    const result = await this.repository.dailyStatRepo.update(existingStat.id, statData);
-                    this.logger.warn(`Inserted daily stat for ${token.symbol}, result:`, result);
-                    if (result.affected === 0) {
-                        throw new Error(`Failed to update daily stat record for ${token.symbol} because of no affected rows`);
-                    }
+                // 使用upsert操作确保原子性
+                const result = await this.repository.dailyStatRepo.upsert(statData, {
+                    conflictPaths: ['tokenId', 'date'],
+                    skipUpdateIfNoValuesChanged: true
+                });
+                
+                this.logger.debug(`Upserted daily stat for ${token.symbol}:`, result);
+                if (!result.identifiers[0]?.id) {
+                    throw new Error(`Failed to upsert daily stat record for ${token.symbol}`);
                 }
 
                 tokenTimer.end();

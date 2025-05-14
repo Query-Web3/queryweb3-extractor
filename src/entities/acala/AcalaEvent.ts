@@ -22,7 +22,16 @@ export class AcalaEvent {
   @Column()
   method: string;
 
-  @Column({ type: 'json', nullable: true })
+  @Column({ type: 'json', nullable: true, transformer: {
+    to: (value: any) => value,
+    from: (value: string) => {
+      try {
+        return JSON.parse(value);
+      } catch {
+        return value;
+      }
+    }
+  }})
   data?: any;
 
   @Column()
