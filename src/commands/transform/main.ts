@@ -6,7 +6,11 @@ import { Not, IsNull } from 'typeorm';
 import { AcalaExtrinsic } from '../../entities/acala/AcalaExtrinsic';
 import { AcalaEvent } from '../../entities/acala/AcalaEvent';
 import { initializeDataSource } from './dataSource';
-import { upsertToken, initializeDimensionTables } from './token/tokenProcessor';
+import { TokenService } from './token/TokenService';
+import { TokenRepository } from './token/TokenRepository';
+import { TokenValidator } from './token/TokenValidator';
+import { TokenFactory } from './token/TokenFactory';
+import { DimensionInitializer } from './token/DimensionInitializer';
 import { processTokenStats } from './token/tokenStatsProcessor';
 import { processYieldStats } from './yield/yieldStatsProcessor';
 import { v4 as uuidv4 } from 'uuid';
@@ -173,11 +177,16 @@ export async function transformData(batchLog?: BatchLog) {
             // Batch process all unique tokens
             if (tokenIds.size > 0) {
                 const tokenTimer = logger.time('Batch process tokens');
-                await Promise.all(Array.from(tokenIds).map(tokenId => 
-                    upsertToken(tokenId).catch(e => 
-                        logger.error(`Failed to process token ${tokenId}`, e as Error)
-                    )
-                ));
+            const tokenService = new TokenService(
+                new TokenRepository(),
+                new TokenValidator(),
+                new TokenFactory()
+            );
+            await Promise.all(Array.from(tokenIds).map(tokenId => 
+                tokenService.upsertToken(tokenId).catch(e => 
+                    logger.error(`Failed to process token ${tokenId}`, e as Error)
+                )
+            ));
                 tokenTimer.end();
             }
 
@@ -195,7 +204,8 @@ export async function transformData(batchLog?: BatchLog) {
             validateTimer.end();
 
             const statsTimer = logger.time('Process stats');
-            await initializeDimensionTables();
+            const dimensionInitializer = new DimensionInitializer();
+            await dimensionInitializer.initialize();
             await processTokenStats();
             await processYieldStats();
             statsTimer.end();
