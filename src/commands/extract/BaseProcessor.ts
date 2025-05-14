@@ -11,7 +11,7 @@ export abstract class BaseProcessor<T> {
     protected batchId!: string;
     protected numericBatchId!: number;
 
-    public async process(batchLog: BatchLog): Promise<{
+    public async process(batchLog: BatchLog, maxRetries = 3): Promise<{
         processedCount: number;
         lastProcessedHeight: number | null;
     }> {
@@ -25,36 +25,64 @@ export abstract class BaseProcessor<T> {
 
         this.dataSource = await initializeDataSource();
         
-        const hasLock = await checkAndAcquireLock(this.dataSource, this.batchId);
-        if (!hasLock) {
-            return { processedCount: 0, lastProcessedHeight: null };
+        let retryCount = 0;
+        while (retryCount < maxRetries) {
+            try {
+                const hasLock = await checkAndAcquireLock(this.dataSource, this.batchId);
+                if (!hasLock) {
+                    return { processedCount: 0, lastProcessedHeight: null };
+                }
+
+                // 使用事务处理数据
+                const queryRunner = this.dataSource.createQueryRunner();
+                await queryRunner.connect();
+                await queryRunner.startTransaction();
+
+                try {
+                    // 1. Fetch data
+                    const rawData = await this.fetchData();
+                    
+                    // 2. Process data
+                    const processedData = await this.processData(rawData);
+                    
+                    // 3. Save data
+                    await this.saveData(processedData);
+
+                    // 4. Update batch log
+                    await this.updateBatchLog(processedData.length);
+
+                    await queryRunner.commitTransaction();
+                    await releaseLock(this.dataSource, this.batchId);
+
+                    return {
+                        processedCount: processedData.length,
+                        lastProcessedHeight: await this.getLastProcessedHeight()
+                    };
+                } catch (error) {
+                    await queryRunner.rollbackTransaction();
+                    if (error instanceof Error && error.message.includes('Deadlock') && retryCount < maxRetries - 1) {
+                        retryCount++;
+                        this.logger.warn(`Deadlock detected, retrying (${retryCount}/${maxRetries})`);
+                        await new Promise(resolve => setTimeout(resolve, 100 * retryCount));
+                        continue;
+                    }
+                    await this.handleError(error);
+                    throw error;
+                } finally {
+                    await queryRunner.release();
+                    await this.cleanup();
+                }
+            } catch (error) {
+                if (retryCount >= maxRetries - 1) {
+                    await this.handleError(error);
+                    throw error;
+                }
+                retryCount++;
+                this.logger.warn(`Retrying after error (${retryCount}/${maxRetries})`, error);
+                await new Promise(resolve => setTimeout(resolve, 100 * retryCount));
+            }
         }
-
-        try {
-            // 1. Fetch data
-            const rawData = await this.fetchData();
-            
-            // 2. Process data
-            const processedData = await this.processData(rawData);
-            
-            // 3. Save data
-            await this.saveData(processedData);
-
-            // 4. Update batch log
-            await this.updateBatchLog(processedData.length);
-
-            await releaseLock(this.dataSource, this.batchId);
-
-            return {
-                processedCount: processedData.length,
-                lastProcessedHeight: await this.getLastProcessedHeight()
-            };
-        } catch (error) {
-            await this.handleError(error);
-            throw error;
-        } finally {
-            await this.cleanup();
-        }
+        return { processedCount: 0, lastProcessedHeight: null };
     }
 
     protected abstract getProcessorName(): string;
