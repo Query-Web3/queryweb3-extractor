@@ -1,6 +1,6 @@
 import { Entity, PrimaryGeneratedColumn, Column, ManyToOne } from 'typeorm';
 import { AcalaBlock } from './AcalaBlock';
-import { Extrinsic } from '../Extrinsic';
+import { AcalaExtrinsic } from './AcalaExtrinsic';
 
 @Entity({ name: 'acala_event' })
 export class AcalaEvent {
@@ -31,6 +31,6 @@ export class AcalaEvent {
   @ManyToOne(() => AcalaBlock, (block) => block.events)
   block: AcalaBlock;
 
-  @ManyToOne(() => Extrinsic, (extrinsic) => extrinsic.events)
-  extrinsic?: Extrinsic;
+  @ManyToOne(() => AcalaExtrinsic, (extrinsic) => extrinsic.events)
+  extrinsic?: AcalaExtrinsic;
 }

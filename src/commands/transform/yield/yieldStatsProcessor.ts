@@ -2,7 +2,7 @@ import { FactYieldStat } from '../../../entities/FactYieldStat';
 import { DimToken } from '../../../entities/DimToken';
 import { DimReturnType } from '../../../entities/DimReturnType';
 import { DimStatCycle } from '../../../entities/DimStatCycle';
-import { Event } from '../../../entities/Event';
+import { AcalaEvent } from '../../../entities/acala/AcalaEvent';
 import { initializeDataSource } from '../dataSource';
 import { getTokenPriceFromOracle } from '../utils';
 import { createApi, disconnectApi } from '../../common/apiConnector';
@@ -28,7 +28,7 @@ export async function processYieldStats() {
         const tokenRepo = queryRunner.manager.getRepository(DimToken);
         const returnTypeRepo = queryRunner.manager.getRepository(DimReturnType);
         const yieldStatRepo = queryRunner.manager.getRepository(FactYieldStat);
-        const eventRepo = queryRunner.manager.getRepository(Event);
+        const eventRepo = queryRunner.manager.getRepository(AcalaEvent);
         const statCycleRepo = queryRunner.manager.getRepository(DimStatCycle);
         
         // Preload all necessary data

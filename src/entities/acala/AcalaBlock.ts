@@ -1,6 +1,6 @@
 import { Entity, PrimaryGeneratedColumn, Column, OneToMany } from 'typeorm';
-import { Extrinsic } from '../Extrinsic';
-import { Event } from '../Event';
+import { AcalaExtrinsic } from './AcalaExtrinsic';
+import { AcalaEvent } from './AcalaEvent';
 
 @Entity({ name: 'acala_block' })
 export class AcalaBlock {
@@ -35,9 +35,9 @@ export class AcalaBlock {
     }>;
   } | null;
 
-  @OneToMany(() => Extrinsic, (extrinsic) => extrinsic.block)
-  extrinsics: Extrinsic[];
+  @OneToMany(() => AcalaExtrinsic, (extrinsic) => extrinsic.block)
+  extrinsics: AcalaExtrinsic[];
 
-  @OneToMany(() => Event, (event) => event.block)
-  events: Event[];
+  @OneToMany(() => AcalaEvent, (event) => event.block)
+  events: AcalaEvent[];
 }

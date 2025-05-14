@@ -4,7 +4,7 @@ import { FactTokenMonthlyStat } from '../../../entities/FactTokenMonthlyStat';
 import { FactTokenYearlyStat } from '../../../entities/FactTokenYearlyStat';
 import { DimToken } from '../../../entities/DimToken';
 import { DimStatCycle } from '../../../entities/DimStatCycle';
-import { Event } from '../../../entities/Event';
+import { AcalaEvent } from '../../../entities/acala/AcalaEvent';
 import { DataSource } from 'typeorm';
 import { initializeDataSource } from '../dataSource';
 
@@ -15,7 +15,7 @@ export class TokenStatsRepository {
     public weeklyStatRepo: import('typeorm').Repository<FactTokenWeeklyStat>;
     public monthlyStatRepo: import('typeorm').Repository<FactTokenMonthlyStat>;
     public yearlyStatRepo: import('typeorm').Repository<FactTokenYearlyStat>;
-    public eventRepo: import('typeorm').Repository<Event>;
+    public eventRepo: import('typeorm').Repository<AcalaEvent>;
     public statCycleRepo: import('typeorm').Repository<DimStatCycle>;
 
     public dailyCycle: DimStatCycle | null;
@@ -31,7 +31,7 @@ export class TokenStatsRepository {
         this.weeklyStatRepo = dataSource.getRepository(FactTokenWeeklyStat);
         this.monthlyStatRepo = dataSource.getRepository(FactTokenMonthlyStat);
         this.yearlyStatRepo = dataSource.getRepository(FactTokenYearlyStat);
-        this.eventRepo = dataSource.getRepository(Event);
+        this.eventRepo = dataSource.getRepository(AcalaEvent);
         this.statCycleRepo = dataSource.getRepository(DimStatCycle);
     }
 
