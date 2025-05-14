@@ -127,7 +127,6 @@ export class DailyStatsProcessor {
                 const statData = {
                     token_id: tokenRecord.id,
                     date: today,
-                    cycle_id: this.repository.dailyCycle?.id,
                     volume: dailyVolume,
                     volume_usd: dailyVolume * tokenPrice,
                     txns_count: dailyTxns,
@@ -142,15 +141,25 @@ export class DailyStatsProcessor {
                         ((dailyVolume - prevMonthStat.volume) / prevMonthStat.volume * 100) : 0
                 };
 
+                // 添加详细日志检查statData内容
+                this.logger.debug(`Preparing stat data for ${token.symbol}:`, {
+                    token_id: statData.token_id,
+                    has_token_id: 'token_id' in statData,
+                    statData_keys: Object.keys(statData),
+                    statData_values: Object.values(statData)
+                });
+
                 if (!existingStat) {
                     this.logger.debug(`Full stat data for ${token.symbol}:`, JSON.stringify(statData, null, 2));
-                    const entity = this.repository.dailyStatRepo.create(statData);
-                    this.logger.debug(`Created entity for ${token.symbol}:`, entity);
-                    const savedEntity = await this.repository.dailyStatRepo.save(entity);
-                    this.logger.debug(`Saved daily stat for ${token.symbol}:`, savedEntity);
-                    if (!savedEntity?.id) {
-                        throw new Error(`Failed to insert daily stat record for ${token.symbol} because entity was not saved`);
+                    // 使用insert方法确保所有字段都被显式设置
+                    const result = await this.repository.dailyStatRepo.insert(statData);
+                    this.logger.debug(`Inserted daily stat for ${token.symbol}:`, result);
+                    if (!result.identifiers[0]?.id) {
+                        throw new Error(`Failed to insert daily stat record for ${token.symbol}`);
                     }
+                    const savedEntity = await this.repository.dailyStatRepo.findOne({
+                        where: { id: result.identifiers[0].id }
+                    });
                 } else if (existingStat.id) {
                     this.logger.warn(`Updating existing daily stat record for ${token.symbol}`, statData);
                     const result = await this.repository.dailyStatRepo.update(existingStat.id, statData);

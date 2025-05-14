@@ -72,7 +72,6 @@ export class YearlyStatsProcessor {
             const yearlyStat = {
                 tokenId: tokenRecord.id,
                 date: today,
-                cycleId: this.repository.yearlyCycle?.id,
                 volume: yearlyVolume,
                 volumeUsd: yearlyVolume * tokenPrice,
                 txnsCount: yearlyTxns,

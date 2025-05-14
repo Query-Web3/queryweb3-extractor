@@ -28,13 +28,30 @@ export async function processTokenStats() {
     
     for (const token of tokens) {
         try {
-            // Process all stats in parallel
-            await Promise.all([
-                dailyProcessor.processToken(token),
-                weeklyProcessor.processToken(token),
-                monthlyProcessor.processToken(token),
-                yearlyProcessor.processToken(token)
-            ]);
+            // Process stats sequentially with retry
+            const processors = [
+                () => dailyProcessor.processToken(token),
+                () => weeklyProcessor.processToken(token),
+                () => monthlyProcessor.processToken(token),
+                () => yearlyProcessor.processToken(token)
+            ];
+
+            for (const processor of processors) {
+                let retries = 3;
+                while (retries > 0) {
+                    try {
+                        await processor();
+                        break;
+                    } catch (error) {
+                        retries--;
+                        if (retries === 0) {
+                            throw error;
+                        }
+                        logger.warn(`Retrying (${retries} left) for token ${token.symbol}`, error as Error);
+                        await new Promise(resolve => setTimeout(resolve, 100 * (4 - retries)));
+                    }
+                }
+            }
         } catch (error) {
             logger.error(`Error processing token ${token.symbol}`, error as Error);
             continue;

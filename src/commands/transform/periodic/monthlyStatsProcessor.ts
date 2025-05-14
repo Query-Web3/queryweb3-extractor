@@ -86,13 +86,12 @@ export class MonthlyStatsProcessor {
             const monthlyStat = {
                 tokenId: tokenRecord.id,
                 date: today,
-                cycleId: this.repository.monthlyCycle?.id,
                 volume: monthlyVolume,
                 volumeUsd: monthlyVolume * tokenPrice,
                 txnsCount: monthlyTxns,
                 priceUsd: tokenPrice,
-                volumeYoY,
-                txnsYoY,
+                volumeYoy: volumeYoY,
+                txnsYoy: txnsYoY,
                 volumeQoq: volumeQoQ,
                 txnsQoq: txnsQoQ
             };
