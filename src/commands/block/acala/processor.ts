@@ -1,5 +1,6 @@
 import { ApiPromise } from '@polkadot/api';
 import { BaseBlockProcessor } from '../BaseBlockProcessor';
+import { AcalaExtrinsic } from '../../../entities/acala/AcalaExtrinsic';
 
 export class AcalaBlockProcessor extends BaseBlockProcessor {
     protected getBlockTime(): number {

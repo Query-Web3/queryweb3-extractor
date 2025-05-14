@@ -1,7 +1,7 @@
 import { ApiPromise } from '@polkadot/api';
 import { ApiConnectorFactory } from './ApiConnectorFactory';
 
-export async function createApiConnection(maxRetries: number = 3, onStatusChange?: (status: 'connected' | 'disconnected' | 'error') => void): Promise<ApiPromise> {
+export async function createApiConnection(maxRetries: number = 3, onStatusChange?: (status: string) => void): Promise<ApiPromise> {
     const chain = process.env.CHAIN || 'acala';
     const connector = ApiConnectorFactory.getConnector(chain);
     return connector.createApiConnection(maxRetries, onStatusChange);

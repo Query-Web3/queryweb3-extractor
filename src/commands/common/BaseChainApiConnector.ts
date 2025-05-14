@@ -9,6 +9,7 @@ const HEALTH_CHECK_INTERVAL = 60000; // 1 minute
 export abstract class BaseChainApiConnector {
     private static connectionPools: Record<string, ApiPromise[]> = {};
     private static healthCheckIntervals: Record<string, NodeJS.Timeout> = {};
+    protected provider?: WsProvider;
     
     protected abstract getEndpoints(): string[];
     protected abstract getApiOptions(): ApiOptions;
@@ -40,7 +41,7 @@ export abstract class BaseChainApiConnector {
         }
     }
 
-    async createApiConnection(maxRetries: number = 3): Promise<ApiPromise> {
+    async createApiConnection(maxRetries: number = 3, onStatusChange?: (status: string) => void): Promise<ApiPromise> {
         await this.initConnectionPool();
         const chainName = this.getChainName();
         const pool = BaseChainApiConnector.connectionPools[chainName];

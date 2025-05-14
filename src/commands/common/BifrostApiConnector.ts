@@ -10,7 +10,7 @@ export class BifrostApiConnector extends BaseChainApiConnector {
         ];
     }
 
-    async createApiConnection(maxRetries: number = 3, onStatusChange?: (status: 'connected' | 'disconnected' | 'error') => void): Promise<ApiPromise> {
+    async createApiConnection(maxRetries: number = 3, onStatusChange?: (status: string) => void): Promise<ApiPromise> {
         this.provider = new WsProvider(this.getEndpoints(), 2500);
         return super.createApiConnection(maxRetries, onStatusChange);
     }
