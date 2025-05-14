@@ -14,12 +14,30 @@ export interface BlockRange {
     isHistorical: boolean;
 }
 
+// Cache for prefetched block hashes
+const blockHashCache = new Map<number, string>();
+
 export async function determineBlockRange(
     startBlock?: number, 
     endBlock?: number,
     timeRange?: string
 ): Promise<BlockRange> {
     let isHistorical = false;
+    
+    // Prefetch block hashes in background if range is known
+    if (startBlock !== undefined && endBlock !== undefined) {
+        const api = await createApi();
+        const prefetchCount = Math.min(100, endBlock - startBlock);
+        for (let i = 0; i < prefetchCount; i++) {
+            const blockNum = startBlock + i;
+            if (!blockHashCache.has(blockNum)) {
+                api.rpc.chain.getBlockHash(blockNum)
+                    .then(hash => blockHashCache.set(blockNum, hash.toString()))
+                    .catch(() => {});
+            }
+        }
+        await disconnectApi(api);
+    }
     
     if (timeRange !== undefined) {
         const timeMs = parseTimeRange(timeRange);
