@@ -64,10 +64,16 @@ export class YearlyStatsProcessor {
             const prevYearStat = await this.repository.yearlyStatRepo.findOne({ 
                 where: { tokenId: tokenRecord.id, date: new Date(today.setFullYear(today.getFullYear() - 2)) } 
             });
-            const volumeYoY = prevYearStat ? 
-                ((yearlyVolume - prevYearStat.volume) / prevYearStat.volume * 100) : 0;
-            const txnsYoY = prevYearStat ? 
-                ((yearlyTxns - prevYearStat.txnsCount) / prevYearStat.txnsCount * 100) : 0;
+            
+            // Safe calculation with checks for zero and NaN
+            const calculateChange = (current: number, previous: number | undefined) => {
+                if (!previous || previous === 0) return 0;
+                const change = ((current - previous) / previous) * 100;
+                return isFinite(change) ? change : 0;
+            };
+
+            const volumeYoY = calculateChange(yearlyVolume, prevYearStat?.volume);
+            const txnsYoY = calculateChange(yearlyTxns, prevYearStat?.txnsCount);
 
             const yearlyStat = {
                 tokenId: tokenRecord.id,
@@ -79,6 +85,13 @@ export class YearlyStatsProcessor {
                 volumeYoy: volumeYoY,
                 txnsYoy: txnsYoY
             };
+
+            // Validate all numeric fields
+            Object.entries(yearlyStat).forEach(([key, value]) => {
+                if (typeof value === 'number' && !isFinite(value)) {
+                    throw new Error(`Invalid ${key} value: ${value}`);
+                }
+            });
 
             const existingYearlyStat = await this.repository.yearlyStatRepo.findOne({
                 where: { tokenId: token.id, date: today }
