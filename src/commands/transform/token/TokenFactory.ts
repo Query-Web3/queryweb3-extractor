@@ -195,14 +195,33 @@ export class TokenFactory implements ITokenFactory {
 
     private handleDefaultInput(input: any): NormalizedTokenInput {
         let key = String(input);
+        let type: 'Native' | 'LP' | 'Stablecoin' | 'ForeignAsset' | 'DexShare' | 'ERC20' | 'Other' = 'Other';
+        
         if (typeof input === 'object' && input !== null) {
+            // 尝试从对象中提取简明信息
+            if (input.symbol) {
+                key = input.symbol;
+            } else if (input.name) {
+                key = input.name;
+            } else if (input.id) {
+                key = String(input.id);
+            } else if (input.address) {
+                key = String(input.address);
+            } else {
+                // 对于复杂对象，创建更简洁的表示
+                const keys = Object.keys(input);
+                if (keys.length === 1) {
+                    key = `${keys[0]}:${input[keys[0]]}`;
+                } else {
+                    key = keys.slice(0, 2).map(k => `${k}:${input[k]}`).join('|');
+                }
+            }
+            
             this.logger.debug('Processing object input in handleDefaultInput', {
                 originalInput: input,
-                convertedKey: JSON.stringify(input)
+                convertedKey: key
             });
-            key = JSON.stringify(input);
         }
-        let type: 'Native' | 'LP' | 'Stablecoin' | 'ForeignAsset' | 'DexShare' | 'ERC20' | 'Other' = 'Other';
         
         // 根据key格式推断类型
         if (typeof input === 'string') {
