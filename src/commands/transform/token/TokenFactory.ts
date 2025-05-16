@@ -13,8 +13,16 @@ export class TokenFactory implements ITokenFactory {
         
         try {
             if (typeof rawInput === 'object' && rawInput !== null) {
+                // 处理AcalaEvents.data中的currentId对象
+                if (rawInput.currentId) {
+                    this.logger.debug('Processing currentId object', {
+                        originalInput: rawInput,
+                        currentId: rawInput.currentId
+                    });
+                    return this.normalizeInput(rawInput.currentId);
+                }
                 // 处理ForeignAsset格式
-                if (rawInput.ForeignAsset) {
+                else if (rawInput.ForeignAsset) {
                     return this.handleForeignAsset(rawInput);
                 }
                 // 处理Token格式
@@ -132,11 +140,23 @@ export class TokenFactory implements ITokenFactory {
     private handlePlainAddress(input: any): NormalizedTokenInput {
         let key = input.address || input.id;
         if (typeof key === 'object') {
-            this.logger.debug('Processing object input in handlePlainAddress', {
-                originalInput: input,
-                convertedKey: JSON.stringify(key)
-            });
-            key = JSON.stringify(key);
+            // 尝试从currentId对象中提取有效字段
+            if (key.Token) {
+                key = `Token-${key.Token}`;
+            } else if (key.ForeignAsset) {
+                key = `ForeignAsset-${key.ForeignAsset}`;
+            } else if (key.DexShare) {
+                const [token1, token2] = key.DexShare;
+                const token1Str = token1.Token ? `Token-${token1.Token}` : `ForeignAsset-${token1.ForeignAsset}`;
+                const token2Str = token2.Token ? `Token-${token2.Token}` : `ForeignAsset-${token2.ForeignAsset}`;
+                key = `DexShare-${token1Str}-${token2Str}`;
+            } else {
+                this.logger.debug('Processing object input in handlePlainAddress', {
+                    originalInput: input,
+                    convertedKey: JSON.stringify(key)
+                });
+                key = JSON.stringify(key);
+            }
         }
         return {
             key,
