@@ -1,73 +1,57 @@
 # Transform Command Details
 
 ## Function Description
-The transform command converts raw blockchain data into analysis-friendly dimensional models, with main functions including:
-- Standardization of raw transaction data
-- Token metric calculations
-- Yield data aggregation
-- Time dimension statistics (daily/weekly/monthly/yearly)
+The transform command converts extracted Acala data to dimensional tables, with main functions including:
+- View last transform batchlog record
+- Pause/resume transform batches
+- Execute standard data transformation
 
 ## Execution Flowchart
 ```mermaid
 graph TD
-    A[Start] --> B[Initialize DB Connection]
-    B --> C[Get Data Processing Range]
-    C --> D[Load Dimension Data]
-    D --> E[Process Raw Transactions]
-    E --> F[Calculate Token Metrics]
-    F --> G[Aggregate Yield Data]
-    G --> H[Generate Time Dimension Stats]
-    H --> I[Save Results]
-    I --> J{All Data Processed?}
-    J -->|No| E
-    J -->|Yes| K[End]
+    A[Start] --> B{Options?}
+    B -->|--batchlog| C[Show last batchlog]
+    B -->|--pause| D[Pause specified batch]
+    B -->|--resume| E[Resume unfinished batch]
+    B -->|No options| F[Execute transformation]
+    C --> G[End]
+    D --> G
+    E --> G
+    F --> G
 ```
 
 ## Parameter Description
 | Parameter | Short | Required | Description |
 |-----------|-------|----------|-------------|
-| --startDate | -s | No | Start date (YYYY-MM-DD) |
-| --endDate | -e | No | End date (YYYY-MM-DD) |
-| --token | -t | No | Specific token address |
-| --force | -f | No | Force recalculation (overwrite existing data) |
+| --batchlog | -b | No | Show last transform batchlog record |
+| --resume | -r | No | Resume non-SUCCESS transform batch |
+| --pause | -p | No | Pause running transform batch by ID |
 
 ## Processing Logic
-1. **Data Preparation Phase**:
-   - Load dimension data (tokens, chains, etc.)
-   - Determine processing scope:
-     - Default: process last 7 days data
-     - Can specify date range or specific token
+1. **Parameter Parsing**:
+   - Check input options
+   - Determine execution mode (log/pause/resume/transform)
 
-2. **Core Transformation Logic**:
-   - Transaction data standardization:
-     - Unified token decimal handling
-     - Price conversion to USD
-   - Metric calculations:
-     - Trading volume (native token and USD)
-     - Transaction count
-     - Annual Percentage Yield (APY)
-     - Total Value Locked (TVL)
+2. **Operation Execution**:
+   - Batchlog: Query and display last record
+   - Pause: Stop specified batch by ID
+   - Resume: Continue unfinished batch
+   - Transform: Execute standard transformation
 
-3. **Aggregation**:
-   - Aggregate by time dimensions (day/week/month/year)
-   - Calculate YoY/QoQ growth rates
-   - Generate standardized reports
-
-4. **Data Storage**:
-   - Use transactions for data consistency
-   - Optimize with incremental updates
-   - Support data recalculation (force parameter)
+3. **Result Handling**:
+   - Display operation results
+   - Clean up resources
 
 ## Typical Usage
 ```bash
-# Process last 7 days data
-ppnpm start transform
+# View last batchlog
+pnpm start transform -- --batchlog
 
-# Process specific date range
-ppnpm start transform -- --startDate=2025-01-01 --endDate=2025-01-31
+# Pause batch with ID 123
+pnpm start transform -- --pause=123
 
-# Process specific token
-ppnpm start transform -- --token=0x123...abc
+# Resume unfinished batch
+pnpm start transform -- --resume
 
-# Force recalculation
-ppnpm start transform -- --force
+# Execute standard transformation
+pnpm start transform

@@ -2,57 +2,47 @@
 
 ## Function Description
 The block command provides block information querying capabilities, with main functions including:
-- Query block details by height
-- Search blocks by timestamp range
+- Query block details by time range
 - Display block metadata (hash, timestamp, etc.)
-- Show transaction/event counts
+- Show chain statistics
 
 ## Execution Flowchart
 ```mermaid
 graph TD
     A[Start] --> B[Initialize API Connection]
-    B --> C{Query Type?}
-    C -->|Block Height| D[Fetch Block by Number]
-    C -->|Timestamp| E[Find Blocks in Range]
-    D --> F[Display Block Details]
-    E --> G[Display Matching Blocks]
-    F --> H[End]
-    G --> H
+    B --> C[Validate Parameters]
+    C --> D[Fetch Block Details]
+    D --> E[Display Results]
+    E --> F[End]
 ```
 
 ## Parameter Description
 | Parameter | Short | Required | Description |
 |-----------|-------|----------|-------------|
-| --block | -b | No | Block number to query |
-| --startTime | -s | No | Start timestamp (ISO format) |
-| --endTime | -e | No | End timestamp (ISO format) |
-| --chain | -c | No | Chain name (default acala) |
+| --time-range | -t | No | Time range (e.g. 2h, 3d, 1w, 1m, 1y) |
 
 ## Processing Logic
 1. **Initialization**:
    - Connect to blockchain node RPC
+   - Initialize data source connection
    - Validate input parameters
 
 2. **Query Execution**:
-   - For block number queries:
-     - Fetch full block details
-     - Count transactions/events
-   - For timestamp queries:
-     - Binary search to find blocks in range
-     - Display summary of matching blocks
+   - Fetch block details for specified time range
+   - Calculate chain statistics
+   - Format results for display
 
-3. **Output Formatting**:
-   - Pretty-print JSON data
-   - Highlight key information
-   - Include metadata like query time
+3. **Output**:
+   - Display formatted results
+   - Clean up resources
 
 ## Typical Usage
 ```bash
-# Query specific block
-ppnpm start block -- --block=1234567
+# Query blocks in last 24 hours
+pnpm start block -- --time-range=1d
 
-# Find blocks between timestamps
-ppnpm start block -- --startTime="2025-01-01T00:00:00Z" --endTime="2025-01-02T00:00:00Z"
+# Query blocks in last week
+pnpm start block -- --time-range=1w
 
-# Query with chain specification
-ppnpm start block -- --block=1234567 --chain=bifrost
+# Query blocks in last month 
+pnpm start block -- --time-range=1m
