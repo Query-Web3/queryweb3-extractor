@@ -1,33 +1,108 @@
 # 事件类型说明
 
-事件表中的`section`和`method`字段表示Acala链中的模块和事件类型。这些值是动态的，取决于链的运行时模块。以下是一些常见模块及其方法：
+事件表中的`section`和`method`字段表示Acala链中的模块和事件类型。以下是常见模块及其事件的数据结构说明：
 
 ## 系统事件 (section: 'system')
-- ExtrinsicSuccess: 交易执行成功
-- ExtrinsicFailed: 交易执行失败
-- NewAccount: 新账户创建
-- KilledAccount: 账户销毁
+
+### ExtrinsicSuccess
+```typescript
+interface ExtrinsicSuccess {
+  blockNumber: number;      // 区块高度
+  blockHash: string;        // 区块哈希
+  extrinsicIndex: number;   // 交易索引
+  dispatchInfo: {           // 调度信息
+    weight: number;         // 权重
+    class: string;          // 交易类别
+    paysFee: boolean;       // 是否支付手续费
+  };
+}
+```
+
+### ExtrinsicFailed
+```typescript
+interface ExtrinsicFailed {
+  blockNumber: number;      // 区块高度
+  blockHash: string;        // 区块哈希
+  extrinsicIndex: number;   // 交易索引
+  dispatchError: {          // 错误信息
+    module: string;         // 错误模块
+    error: string;          // 错误代码
+    documentation: string[];// 错误说明
+  };
+  dispatchInfo: {           // 调度信息
+    weight: number;         // 权重
+    class: string;          // 交易类别
+    paysFee: boolean;       // 是否支付手续费
+  };
+}
+```
 
 ## 余额事件 (section: 'balances')
-- Transfer: 转账
-- Deposit: 存款
-- Withdraw: 取款
-- Endowed: 初始余额分配
+
+### Transfer
+```typescript
+interface Transfer {
+  blockNumber: number;      // 区块高度
+  from: string;             // 发送方地址
+  to: string;               // 接收方地址
+  amount: string;           // 转账金额(字符串格式)
+  currencyId: string;       // 代币ID
+  fee: string;              // 手续费
+  timestamp: number;        // 时间戳
+}
+```
+
+### Deposit
+```typescript
+interface Deposit {
+  blockNumber: number;      // 区块高度
+  account: string;          // 账户地址
+  amount: string;           // 存款金额
+  currencyId: string;       // 代币ID
+  timestamp: number;        // 时间戳
+}
+```
 
 ## DEX事件 (section: 'dex')
-- Swap: 代币交换
-- AddLiquidity: 添加流动性
-- RemoveLiquidity: 移除流动性
-- TradingPairCreated: 交易对创建
+
+### Swap
+```typescript
+interface Swap {
+  blockNumber: number;      // 区块高度
+  trader: string;           // 交易者地址
+  path: string[];           // 交易路径
+  amountIn: string;         // 输入金额
+  amountOut: string;        // 输出金额
+  fee: string;              // 手续费
+  timestamp: number;        // 时间戳
+}
+```
+
+### AddLiquidity
+```typescript
+interface AddLiquidity {
+  blockNumber: number;      // 区块高度
+  provider: string;         // 流动性提供者
+  tokenA: string;           // 代币A
+  tokenB: string;           // 代币B
+  amountA: string;          // 代币A数量
+  amountB: string;          // 代币B数量
+  liquidityToken: string;   // 流动性代币数量
+  timestamp: number;        // 时间戳
+}
+```
 
 ## Homa事件 (section: 'homa')
-- Minted: 铸造新代币
-- RequestedRedeem: 请求赎回
-- Redeemed: 赎回完成
 
-## 激励事件 (section: 'incentives')
-- Deposited: 存入激励
-- Withdrawn: 取出激励
-- Claimed: 领取奖励
+### Minted
+```typescript
+interface Minted {
+  blockNumber: number;      // 区块高度
+  account: string;          // 账户地址
+  amount: string;           // 铸造数量
+  liquidAmount: string;     // 流动性代币数量
+  timestamp: number;        // 时间戳
+}
+```
 
 注意：实际可用的模块和方法取决于Acala运行时版本和配置。最新列表请参考[Acala文档](https://wiki.acala.network/)。

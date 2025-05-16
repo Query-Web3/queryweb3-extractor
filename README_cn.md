@@ -12,12 +12,15 @@
 - [环境依赖](#环境依赖)
 - [安装](#安装)
 - [基本使用方法](#基本使用方法)
-  - [Extract命令](doc/cn/extract_command.md)
-  - [Transform命令](doc/cn/transform_command.md)
-  - [Block命令](doc/cn/block_command.md)
-  - [Truncate命令](doc/cn/truncate_command.md)
-- [详细文档](#详细文档)
+  - [Extract命令](#extract命令) ([详情](doc/cn/extract_command.md))
+  - [Transform命令](#transform命令) ([详情](doc/cn/transform_command.md))
+  - [Block命令](#block命令) ([详情](doc/cn/block_command.md))
+  - [Truncate命令](#truncate命令) ([详情](doc/cn/truncate_command.md))
+- [数据库结构](doc/cn/database.md)
+- [事件规范](doc/cn/events.md)
+- [使用指南](doc/cn/usage.md)
 - [版权声明](#版权声明)
+- [查看英文版本](README.md)
 
 区块链数据提取工具，用于从基于Polkadot/Substrate网络提取和存储详细的交易信息。
 
@@ -32,7 +35,7 @@
 
 ## 环境依赖
 
-- Node.js 22.15+
+- Node.js 22.15+ (pnpm 8.10+)
 - MySQL 5.7+
 - Acala节点RPC访问权限
 

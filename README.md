@@ -12,12 +12,15 @@
 - [Requirements](#requirements)
 - [Installation](#installation)
 - [Basic Usage](#basic-usage)
-  - [Extract Command](doc/en/transform_command.md)
-  - [Transform Command](doc/en/transform_command.md)
-  - [Block Command](doc/en/block_command.md)
-  - [Truncate Command](doc/en/tuncate_command.md)
-- [Detailed Documentation](#detailed-documentation)
+  - [Extract Command](#extract-command) ([Details](doc/en/extract_command.md))
+  - [Transform Command](#transform-command) ([Details](doc/en/transform_command.md))
+  - [Block Command](#block-command) ([Details](doc/en/block_command.md))
+  - [Truncate Command](#truncate-command) ([Details](doc/en/truncate_command.md))
+- [Database Structure](doc/en/database.md)
+- [Events Specification](doc/en/events.md)
+- [Usage Guide](doc/en/usage.md)
 - [License](#license)
+- [View Chinese Version](README_cn.md)
 
 A blockchain data extraction tool for retrieving and storing detailed transaction information from Polkadot/Substrate-based networks.
 
@@ -32,7 +35,7 @@ A blockchain data extraction tool for retrieving and storing detailed transactio
 
 ## Requirements
 
-- Node.js 22.15+
+- Node.js 22.15+ (pnpm 8.10+)
 - MySQL 5.7+
 - Access to Acala node RPC
 

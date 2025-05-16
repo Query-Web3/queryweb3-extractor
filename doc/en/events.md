@@ -1,33 +1,108 @@
-# Event Section and Method Details
+# Event Types Specification
 
-The `section` and `method` fields in the event table represent the module and event type from the Acala chain. These values are dynamic and depend on the chain's runtime modules. Here are some common sections and their methods:
+The `section` and `method` fields in event tables represent modules and event types in Acala chain. Below are data structure specifications for common modules and events:
 
 ## System Events (section: 'system')
-- ExtrinsicSuccess: Transaction execution succeeded
-- ExtrinsicFailed: Transaction execution failed
-- NewAccount: New account created
-- KilledAccount: Account removed
 
-## Balances Events (section: 'balances')
-- Transfer: Token transfer
-- Deposit: Deposit made
-- Withdraw: Withdrawal made
-- Endowed: Initial balance endowment
+### ExtrinsicSuccess
+```typescript
+interface ExtrinsicSuccess {
+  blockNumber: number;      // Block height
+  blockHash: string;        // Block hash
+  extrinsicIndex: number;   // Extrinsic index
+  dispatchInfo: {           // Dispatch info
+    weight: number;         // Weight
+    class: string;          // Dispatch class
+    paysFee: boolean;       // Whether pays fee
+  };
+}
+```
+
+### ExtrinsicFailed
+```typescript
+interface ExtrinsicFailed {
+  blockNumber: number;      // Block height
+  blockHash: string;        // Block hash
+  extrinsicIndex: number;   // Extrinsic index
+  dispatchError: {          // Error info
+    module: string;         // Error module
+    error: string;          // Error code
+    documentation: string[];// Error docs
+  };
+  dispatchInfo: {           // Dispatch info
+    weight: number;         // Weight
+    class: string;          // Dispatch class
+    paysFee: boolean;       // Whether pays fee
+  };
+}
+```
+
+## Balance Events (section: 'balances')
+
+### Transfer
+```typescript
+interface Transfer {
+  blockNumber: number;      // Block height
+  from: string;             // Sender address
+  to: string;               // Receiver address
+  amount: string;           // Transfer amount (string format)
+  currencyId: string;       // Token ID
+  fee: string;              // Transaction fee
+  timestamp: number;        // Timestamp
+}
+```
+
+### Deposit
+```typescript
+interface Deposit {
+  blockNumber: number;      // Block height
+  account: string;          // Account address
+  amount: string;           // Deposit amount
+  currencyId: string;       // Token ID
+  timestamp: number;        // Timestamp
+}
+```
 
 ## DEX Events (section: 'dex')
-- Swap: Token swap
-- AddLiquidity: Liquidity added
-- RemoveLiquidity: Liquidity removed
-- TradingPairCreated: New trading pair created
+
+### Swap
+```typescript
+interface Swap {
+  blockNumber: number;      // Block height
+  trader: string;           // Trader address
+  path: string[];           // Swap path
+  amountIn: string;         // Input amount
+  amountOut: string;        // Output amount
+  fee: string;              // Transaction fee
+  timestamp: number;        // Timestamp
+}
+```
+
+### AddLiquidity
+```typescript
+interface AddLiquidity {
+  blockNumber: number;      // Block height
+  provider: string;         // Liquidity provider
+  tokenA: string;           // Token A
+  tokenB: string;           // Token B
+  amountA: string;          // Amount of token A
+  amountB: string;          // Amount of token B
+  liquidityToken: string;   // Liquidity token amount
+  timestamp: number;        // Timestamp
+}
+```
 
 ## Homa Events (section: 'homa')
-- Minted: New tokens minted
-- RequestedRedeem: Redemption requested
-- Redeemed: Redemption completed
 
-## Incentives Events (section: 'incentives')
-- Deposited: Incentives deposited
-- Withdrawn: Incentives withdrawn
-- Claimed: Rewards claimed
+### Minted
+```typescript
+interface Minted {
+  blockNumber: number;      // Block height
+  account: string;          // Account address
+  amount: string;           // Minted amount
+  liquidAmount: string;     // Liquid token amount
+  timestamp: number;        // Timestamp
+}
+```
 
-Note: The actual available sections and methods depend on the Acala runtime version and configuration. For the most up-to-date list, refer to the [Acala documentation](https://wiki.acala.network/).
+Note: Available modules and methods depend on Acala runtime version and configuration. For latest list please refer to [Acala Documentation](https://wiki.acala.network/).
