@@ -37,6 +37,7 @@ A blockchain data extraction tool for retrieving and storing detailed transactio
 
 - Node.js 22.15+ (pnpm 8.10+)
 - MySQL 5.7+
+- Redis 5.0+
 - Access to Acala node RPC
 
 ## Installation
@@ -62,6 +63,11 @@ TRANSFORM_DB_PORT="3306"
 TRANSFORM_DB_USER="root"
 TRANSFORM_DB_PASSWORD="password"
 TRANSFORM_DB_NAME="QUERYWEB3"
+
+# Redis cache configuration
+REDIS_HOST="127.0.0.1"
+REDIS_PORT="6379"
+REDIS_PASSWORD=""
 ```
 
 4. Run database migrations:

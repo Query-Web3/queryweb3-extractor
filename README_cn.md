@@ -37,6 +37,7 @@
 
 - Node.js 22.15+ (pnpm 8.10+)
 - MySQL 5.7+
+- Redis 5.0+
 - Acala节点RPC访问权限
 
 ## 安装
@@ -62,6 +63,11 @@ TRANSFORM_DB_PORT="3306"
 TRANSFORM_DB_USER="root"
 TRANSFORM_DB_PASSWORD="password"
 TRANSFORM_DB_NAME="QUERYWEB3"
+
+# Redis缓存配置
+REDIS_HOST="127.0.0.1"
+REDIS_PORT="6379"
+REDIS_PASSWORD=""
 ```
 
 4. 运行数据库迁移：

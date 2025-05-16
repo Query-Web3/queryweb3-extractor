@@ -4,17 +4,27 @@ import { DimReturnType } from '../../../entities/DimReturnType';
 import { DimStatCycle } from '../../../entities/DimStatCycle';
 import { initializeDataSource } from '../dataSource';
 import { Logger, LogLevel } from '../../../utils/logger';
+import { createClient } from 'redis';
 
 export class DimensionInitializer {
     private logger = Logger.getInstance();
+    private redisClient: ReturnType<typeof createClient>;
 
     constructor() {
+        this.redisClient = createClient({
+            url: `redis://${process.env.REDIS_HOST}:${process.env.REDIS_PORT}`
+        });
+        this.redisClient.on('error', err => this.logger.error('Redis error:', err));
         this.logger.setLogLevel(process.env.LOG_LEVEL as LogLevel || LogLevel.INFO);
     }
 
     public async initialize(): Promise<void> {
         const initTimer = this.logger.time('Initialize dimension tables');
         const dataSource = await initializeDataSource();
+        
+        if (!this.redisClient.isOpen) {
+            await this.redisClient.connect();
+        }
         
         try {
             // Initialize chain
@@ -28,8 +38,39 @@ export class DimensionInitializer {
             
             // Initialize stat cycles
             await this.initStatCycles(dataSource);
+
+            // Cache all dimension data to Redis
+            await this.cacheDimensionsToRedis(dataSource);
         } finally {
             initTimer.end();
+        }
+    }
+
+    private async cacheDimensionsToRedis(dataSource: any): Promise<void> {
+        const cacheTimer = this.logger.time('Cache dimensions to Redis');
+        try {
+            const chainRepo = dataSource.getRepository(DimChain);
+            const assetTypeRepo = dataSource.getRepository(DimAssetType);
+            const returnTypeRepo = dataSource.getRepository(DimReturnType);
+            const statCycleRepo = dataSource.getRepository(DimStatCycle);
+
+            const [chains, assetTypes, returnTypes, statCycles] = await Promise.all([
+                chainRepo.find(),
+                assetTypeRepo.find(),
+                returnTypeRepo.find(),
+                statCycleRepo.find()
+            ]);
+
+            await Promise.all([
+                this.redisClient.set('dim:chains', JSON.stringify(chains)),
+                this.redisClient.set('dim:assetTypes', JSON.stringify(assetTypes)),
+                this.redisClient.set('dim:returnTypes', JSON.stringify(returnTypes)),
+                this.redisClient.set('dim:statCycles', JSON.stringify(statCycles))
+            ]);
+
+            this.logger.debug('Cached all dimension tables to Redis');
+        } finally {
+            cacheTimer.end();
         }
     }
 

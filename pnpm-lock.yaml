@@ -29,6 +29,9 @@ importers:
       '@types/mathjs':
         specifier: ^9.4.2
         version: 9.4.2
+      '@types/redis':
+        specifier: ^4.0.11
+        version: 4.0.11
       '@types/ws':
         specifier: ^8.18.1
         version: 8.18.1
@@ -53,12 +56,15 @@ importers:
       p-queue:
         specifier: ^8.1.0
         version: 8.1.0
+      redis:
+        specifier: ^5.0.1
+        version: 5.0.1
       reflect-metadata:
         specifier: ^0.1.14
         version: 0.1.14
       typeorm:
         specifier: ^0.3.24
-        version: 0.3.24(mysql2@3.14.1)(reflect-metadata@0.1.14)(ts-node@10.9.2(@types/node@22.15.18)(typescript@5.8.3))
+        version: 0.3.24(mysql2@3.14.1)(redis@5.0.1)(reflect-metadata@0.1.14)(ts-node@10.9.2(@types/node@22.15.18)(typescript@5.8.3))
       uuid:
         specifier: ^9.0.1
         version: 9.0.1
@@ -444,6 +450,34 @@ packages:
     resolution: {integrity: sha512-qfbFb0Tdjsx5QawICduPTc3326SP+lEdggfyT4HmfrM50nvmCR/82TRAtEWKK7EPhXjoE/cBL/i5VO4d68DBQQ==}
     engines: {node: '>=18'}
 
+  '@redis/bloom@5.0.1':
+    resolution: {integrity: sha512-F7L+rnuJvq/upKaVoEgsf8VT7g5pLQYWRqSUOV3uO4vpVtARzSKJ7CLyJjVsQS+wZVCGxsLMh8DwAIDcny1B+g==}
+    engines: {node: '>= 18'}
+    peerDependencies:
+      '@redis/client': ^5.0.1
+
+  '@redis/client@5.0.1':
+    resolution: {integrity: sha512-k0EJvlMGEyBqUD3orKe0UMZ66fPtfwqPIr+ZSd853sXj2EyhNtPXSx+J6sENXJNgAlEBhvD+57Dwt0qTisKB0A==}
+    engines: {node: '>= 18'}
+
+  '@redis/json@5.0.1':
+    resolution: {integrity: sha512-t94HOTk5myfhvaHZzlUzk2hoUvH2jsjftcnMgJWuHL/pzjAJQoZDCUJzjkoXIUjWXuyJixTguaaDyOZWwqH2Kg==}
+    engines: {node: '>= 18'}
+    peerDependencies:
+      '@redis/client': ^5.0.1
+
+  '@redis/search@5.0.1':
+    resolution: {integrity: sha512-wipK6ZptY7K68B7YLVhP5I/wYCDUU+mDJMyJiUcQLuOs7/eKOBc8lTXKUSssor8QnzZSPy4A5ulcC5PZY22Zgw==}
+    engines: {node: '>= 18'}
+    peerDependencies:
+      '@redis/client': ^5.0.1
+
+  '@redis/time-series@5.0.1':
+    resolution: {integrity: sha512-k6PgbrakhnohsEWEAdQZYt3e5vSKoIzpKvgQt8//lnWLrTZx+c3ed2sj0+pKIF4FvnSeuXLo4bBWcH0Z7Urg1A==}
+    engines: {node: '>= 18'}
+    peerDependencies:
+      '@redis/client': ^5.0.1
+
   '@scure/base@1.2.5':
     resolution: {integrity: sha512-9rE6EOVeIQzt5TSu4v+K523F8u6DhBsoZWPGKlnCshhlDhy0kJzUX4V+tr2dWmzF1GdekvThABoEQBGBQI7xZw==}
 
@@ -500,6 +534,10 @@ packages:
 
   '@types/node@22.15.18':
     resolution: {integrity: sha512-v1DKRfUdyW+jJhZNEI1PYy29S2YRxMV5AOO/x/SjKmW0acCIOqmbj6Haf9eHAhsPmrhlHSxEhv/1WszcLWV4cg==}
+
+  '@types/redis@4.0.11':
+    resolution: {integrity: sha512-bI+gth8La8Wg/QCR1+V1fhrL9+LZUSWfcqpOj2Kc80ZQ4ffbdL173vQd5wovmoV9i071FU9oP2g6etLuEwb6Rg==}
+    deprecated: This is a stub types definition. redis provides its own type definitions, so you do not need this installed.
 
   '@types/strip-bom@3.0.0':
     resolution: {integrity: sha512-xevGOReSYGM7g/kUBZzPqCrR/KYAo+F0yiPc85WFTJa0MSLtyFTVTU6cJu/aV4mid7IffDIWqo69THF2o4JiEQ==}
@@ -606,6 +644,10 @@ packages:
   cliui@8.0.1:
     resolution: {integrity: sha512-BSeNnyus75C4//NQ9gQt1/csTXyo/8Sb+afLAkzAptFuMsod9HFokGNudZpi/oQV73hnVK+sR+5PVRMd+Dr7YQ==}
     engines: {node: '>=12'}
+
+  cluster-key-slot@1.1.2:
+    resolution: {integrity: sha512-RMr0FhtfXemyinomL4hrWcYJxmX6deFdCxpJzhDttxgO1+bcCnkk+9drydLVDmAMG7NE6aN/fl4F7ucU/90gAA==}
+    engines: {node: '>=0.10.0'}
 
   color-convert@2.0.1:
     resolution: {integrity: sha512-RRECPsj7iu/xb5oKYcsFHSppFNnsj/52OVTRKb4zP5onXwVF3zVmmToNcOfGC+CRDpfK/U584fMg38ZHCaElKQ==}
@@ -993,6 +1035,10 @@ packages:
   readdirp@3.6.0:
     resolution: {integrity: sha512-hOS089on8RduqdbhvQ5Z37A0ESjsqz6qnRcffsMU3495FuTdqSm+7bhJ29JvIOsBDEEnan5DPu9t3To9VRlMzA==}
     engines: {node: '>=8.10.0'}
+
+  redis@5.0.1:
+    resolution: {integrity: sha512-J8nqUjrfSq0E8NQkcHDZ4HdEQk5RMYjP3jZq02PE+ERiRxolbDNxPaTT4xh6tdrme+lJ86Goje9yMt9uzh23hQ==}
+    engines: {node: '>= 18'}
 
   reflect-metadata@0.1.14:
     resolution: {integrity: sha512-ZhYeb6nRaXCfhnndflDK8qI6ZQ/YcWZCISRAWICW9XYqMUwjZM9Z0DveWX/ABN01oxSHwVxKQmxeYZSsm0jh5A==}
@@ -1701,6 +1747,26 @@ snapshots:
       - bufferutil
       - utf-8-validate
 
+  '@redis/bloom@5.0.1(@redis/client@5.0.1)':
+    dependencies:
+      '@redis/client': 5.0.1
+
+  '@redis/client@5.0.1':
+    dependencies:
+      cluster-key-slot: 1.1.2
+
+  '@redis/json@5.0.1(@redis/client@5.0.1)':
+    dependencies:
+      '@redis/client': 5.0.1
+
+  '@redis/search@5.0.1(@redis/client@5.0.1)':
+    dependencies:
+      '@redis/client': 5.0.1
+
+  '@redis/time-series@5.0.1(@redis/client@5.0.1)':
+    dependencies:
+      '@redis/client': 5.0.1
+
   '@scure/base@1.2.5': {}
 
   '@sqltools/formatter@1.2.5': {}
@@ -1767,6 +1833,10 @@ snapshots:
   '@types/node@22.15.18':
     dependencies:
       undici-types: 6.21.0
+
+  '@types/redis@4.0.11':
+    dependencies:
+      redis: 5.0.1
 
   '@types/strip-bom@3.0.0': {}
 
@@ -1869,6 +1939,8 @@ snapshots:
       string-width: 4.2.3
       strip-ansi: 6.0.1
       wrap-ansi: 7.0.0
+
+  cluster-key-slot@1.1.2: {}
 
   color-convert@2.0.1:
     dependencies:
@@ -2232,6 +2304,14 @@ snapshots:
     dependencies:
       picomatch: 2.3.1
 
+  redis@5.0.1:
+    dependencies:
+      '@redis/bloom': 5.0.1(@redis/client@5.0.1)
+      '@redis/client': 5.0.1
+      '@redis/json': 5.0.1(@redis/client@5.0.1)
+      '@redis/search': 5.0.1(@redis/client@5.0.1)
+      '@redis/time-series': 5.0.1(@redis/client@5.0.1)
+
   reflect-metadata@0.1.14: {}
 
   require-directory@2.1.1: {}
@@ -2374,7 +2454,7 @@ snapshots:
 
   typed-function@4.2.1: {}
 
-  typeorm@0.3.24(mysql2@3.14.1)(reflect-metadata@0.1.14)(ts-node@10.9.2(@types/node@22.15.18)(typescript@5.8.3)):
+  typeorm@0.3.24(mysql2@3.14.1)(redis@5.0.1)(reflect-metadata@0.1.14)(ts-node@10.9.2(@types/node@22.15.18)(typescript@5.8.3)):
     dependencies:
       '@sqltools/formatter': 1.2.5
       ansis: 3.17.0
@@ -2393,6 +2473,7 @@ snapshots:
       yargs: 17.7.2
     optionalDependencies:
       mysql2: 3.14.1
+      redis: 5.0.1
       ts-node: 10.9.2(@types/node@22.15.18)(typescript@5.8.3)
     transitivePeerDependencies:
       - babel-plugin-macros
