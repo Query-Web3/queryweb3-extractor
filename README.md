@@ -12,10 +12,10 @@
 - [Requirements](#requirements)
 - [Installation](#installation)
 - [Basic Usage](#basic-usage)
-  - [Extract Command](doc/cn/transform_command.md)
-  - [Transform Command](doc/cn/transform_command.md)
-  - [Block Command](doc/cn/block_command.md)
-  - [Truncate Command](doc/cn/tuncate_command.md)
+  - [Extract Command](doc/en/transform_command.md)
+  - [Transform Command](doc/en/transform_command.md)
+  - [Block Command](doc/en/block_command.md)
+  - [Truncate Command](doc/en/tuncate_command.md)
 - [Detailed Documentation](#detailed-documentation)
 - [License](#license)
 
@@ -103,5 +103,3 @@ For more detailed documentation, please refer to:
 ## License
 
 [Apache License 2.0](LICENSE)
-
-[View Chinese Version](README_cn.md)
