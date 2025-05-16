@@ -46,7 +46,7 @@ export async function processYieldStats() {
             where: { 
                 section: 'Rewards', 
                 method: 'Reward',
-                data: { currencyId: () => `JSON_EXTRACT(data, '$.currencyId')` }
+                //data: { currencyId: () => `JSON_EXTRACT(data, '$.currencyId')` }
             }
         });
         const transferEvents = await eventRepo.find({
@@ -54,12 +54,12 @@ export async function processYieldStats() {
                 { 
                     section: 'Tokens', 
                     method: 'Transfer',
-                    data: { currencyId: () => `JSON_EXTRACT(data, '$.currencyId')` }
+                    //data: { currencyId: () => `JSON_EXTRACT(data, '$.currencyId')` }
                 },
                 { 
                     section: 'Balances', 
                     method: 'Transfer',
-                    data: { currencyId: () => `JSON_EXTRACT(data, '$.currencyId')` }
+                    //data: { currencyId: () => `JSON_EXTRACT(data, '$.currencyId')` }
                 }
             ]
         });
