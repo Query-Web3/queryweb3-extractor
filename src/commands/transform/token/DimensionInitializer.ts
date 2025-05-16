@@ -28,17 +28,16 @@ export class DimensionInitializer {
         }
         
         try {
-            // Initialize chain
-            await this.initChain(dataSource);
-            
-            // Initialize asset types
-            await this.initAssetTypes(dataSource);
-            
-            // Initialize return types
-            await this.initReturnTypes(dataSource);
-            
-            // Initialize stat cycles
-            await this.initStatCycles(dataSource);
+            // Initialize all dimension tables and get records
+            const chain = await this.initChain(dataSource);
+            const assetTypes = await this.initAssetTypes(dataSource);
+            const returnTypes = await this.initReturnTypes(dataSource);
+            const statCycles = await this.initStatCycles(dataSource);
+
+            this.logger.debug(`Initialized chain: ${chain.name} (ID: ${chain.chainId})`);
+            this.logger.debug(`Initialized ${assetTypes.length} asset types`);
+            this.logger.debug(`Initialized ${returnTypes.length} return types`);
+            this.logger.debug(`Initialized ${statCycles.length} stat cycles`);
 
             // Cache all dimension data to Redis
             await this.cacheDimensionsToRedis(dataSource);
@@ -82,21 +81,24 @@ export class DimensionInitializer {
         }
     }
 
-    private async initChain(dataSource: any): Promise<void> {
+    private async initChain(dataSource: any): Promise<DimChain> {
         this.logger.debug('Initializing chain');
         const repo = dataSource.getRepository(DimChain);
-            let chain = await repo.findOne({ where: { name: 'Acala' } });
-            if (!chain) {
-                chain = await repo.save({
-                    name: 'Acala',
-                    chainId: 1
-                });
-                this.hasTableUpdates = true;
-                this.logger.debug('Created new chain record');
-            }
+        let chain = await repo.findOne({ where: { name: 'Acala' } });
+        if (!chain) {
+            chain = await repo.save({
+                name: 'Acala',
+                chainId: 1
+            });
+            this.hasTableUpdates = true;
+            this.logger.debug('Created new chain record');
+        } else {
+            this.logger.debug('Using existing chain record');
+        }
+        return chain;
     }
 
-    private async initAssetTypes(dataSource: any): Promise<void> {
+    private async initAssetTypes(dataSource: any): Promise<DimAssetType[]> {
         this.logger.debug('Initializing asset types');
         const repo = dataSource.getRepository(DimAssetType);
         const types = [
@@ -106,17 +108,22 @@ export class DimensionInitializer {
             { name: 'Governance', description: 'Governance token' }
         ];
         
+        const results: DimAssetType[] = [];
         for (const type of types) {
             let existing = await repo.findOne({ where: { name: type.name } });
             if (!existing) {
-                await repo.save(type);
+                existing = await repo.save(type);
                 this.hasTableUpdates = true;
                 this.logger.debug(`Created asset type: ${type.name}`);
+            } else {
+                this.logger.debug(`Using existing asset type: ${type.name}`);
             }
+            results.push(existing);
         }
+        return results;
     }
 
-    private async initReturnTypes(dataSource: any): Promise<void> {
+    private async initReturnTypes(dataSource: any): Promise<DimReturnType[]> {
         this.logger.debug('Initializing return types');
         const repo = dataSource.getRepository(DimReturnType);
         const types = [
@@ -125,17 +132,22 @@ export class DimensionInitializer {
             { name: 'Lending', description: 'Lending interest' }
         ];
         
+        const results: DimReturnType[] = [];
         for (const type of types) {
             let existing = await repo.findOne({ where: { name: type.name } });
             if (!existing) {
-                await repo.save(type);
+                existing = await repo.save(type);
                 this.hasTableUpdates = true;
                 this.logger.debug(`Created return type: ${type.name}`);
+            } else {
+                this.logger.debug(`Using existing return type: ${type.name}`);
             }
+            results.push(existing);
         }
+        return results;
     }
 
-    private async initStatCycles(dataSource: any): Promise<void> {
+    private async initStatCycles(dataSource: any): Promise<DimStatCycle[]> {
         this.logger.debug('Initializing stat cycles');
         const repo = dataSource.getRepository(DimStatCycle);
         const cycles = [
@@ -146,13 +158,18 @@ export class DimensionInitializer {
             { name: 'Yearly', description: 'Yearly statistics', days: 365 }
         ];
         
+        const results: DimStatCycle[] = [];
         for (const cycle of cycles) {
             let existing = await repo.findOne({ where: { name: cycle.name } });
             if (!existing) {
-                await repo.save(cycle);
+                existing = await repo.save(cycle);
                 this.hasTableUpdates = true;
                 this.logger.debug(`Created stat cycle: ${cycle.name}`);
+            } else {
+                this.logger.debug(`Using existing stat cycle: ${cycle.name}`);
             }
+            results.push(existing);
         }
+        return results;
     }
 }
