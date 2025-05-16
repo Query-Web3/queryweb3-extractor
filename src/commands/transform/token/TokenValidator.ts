@@ -38,7 +38,34 @@ export class TokenValidator implements ITokenValidator {
                 throw new Error(`Invalid token type: ${input.type}`);
             }
 
-            this.logger.debug(`Token input validation passed for ${input.key}`);
+            // 针对不同类型添加额外验证
+            switch(input.type) {
+                case 'ForeignAsset':
+                    if (!input.rawData?.ForeignAsset) {
+                        throw new Error('Missing ForeignAsset ID');
+                    }
+                    break;
+                case 'DexShare':
+                    if (!Array.isArray(input.rawData?.DexShare)) {
+                        throw new Error('Invalid DexShare format');
+                    }
+                    if (input.rawData.DexShare.length !== 2) {
+                        throw new Error('DexShare must contain exactly 2 tokens');
+                    }
+                    break;
+                case 'LP':
+                    if (!input.symbol.startsWith('LP-')) {
+                        throw new Error('LP token symbol must start with LP-');
+                    }
+                    break;
+            }
+
+            // 记录详细验证信息
+            this.logger.debug(`Token validation passed`, {
+                key: input.key,
+                type: input.type,
+                method: input.rawData?.method || 'N/A'
+            });
         } finally {
             validationTimer.end();
         }

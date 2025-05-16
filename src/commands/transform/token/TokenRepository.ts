@@ -36,14 +36,21 @@ export class TokenRepository implements ITokenRepository {
                         ? input.rawData.chainId 
                         : 1; // 默认Acala链
                     
+                    // 构建token数据 - 包含Method特定信息
                     const tokenData = {
                         chain_id: chainId,
                         address: input.key,
                         symbol: input.symbol,
                         name: input.name,
                         decimals: input.decimals,
-                        asset_type_id: assetType.id, // 使用数据库列名
-                        updated_at: new Date() // 使用数据库列名
+                        asset_type_id: assetType.id,
+                        updated_at: new Date(),
+                        metadata: {
+                            method: input.rawData?.method || null,
+                            params: input.rawData?.params || null,
+                            eventData: input.rawData?.eventData || null,
+                            timestamp: input.rawData?.timestamp || new Date().toISOString()
+                        }
                     };
 
                     // 执行upsert操作
@@ -53,12 +60,20 @@ export class TokenRepository implements ITokenRepository {
                 } catch (error) {
                     await queryRunner.rollbackTransaction();
                     lastError = error as Error;
+                    this.logger.error(`Failed to upsert token (${retries} retries left)`, lastError, {
+                        tokenKey: input.key,
+                        method: input.rawData?.method,
+                        params: input.rawData?.params
+                    });
+                    
                     if (retries > 0) {
                         // 指数退避策略
                         await new Promise(resolve => setTimeout(resolve, delay));
                         delay = Math.min(delay * 2, 2000); // 最大延迟2秒
+                        continue;
                     }
-                    continue;
+                    
+                    throw lastError;
                 }
             }
             throw lastError || new Error(`Failed to upsert token after 5 retries`);

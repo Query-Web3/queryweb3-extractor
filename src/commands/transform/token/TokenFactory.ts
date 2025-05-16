@@ -56,12 +56,36 @@ export class TokenFactory implements ITokenFactory {
 
     private handleToken(input: any): NormalizedTokenInput {
         const key = `Token-${input.Token}`;
+        let symbol = input.symbol || input.Token;
+        let name = input.name || `Token ${input.Token}`;
+        let decimals = input.decimals || 12;
+
+        // 针对不同Method的特殊处理
+        if (input.method) {
+            switch(input.method) {
+                case 'tokens.transfer':
+                    symbol = input.params?.currencyId?.Token || symbol;
+                    name = `Transfer Token ${symbol}`;
+                    break;
+                case 'dex.swapWithExactSupply':
+                case 'dex.swapWithExactTarget':
+                    symbol = input.params?.path?.[0]?.Token || symbol;
+                    name = `Swap Token ${symbol}`;
+                    break;
+                case 'homa.mint':
+                case 'homa.requestRedeem':
+                    symbol = 'ACA';
+                    name = 'Native Token ACA';
+                    break;
+            }
+        }
+
         return {
             key,
-            symbol: input.symbol || input.Token,
-            name: input.name || `Token ${input.Token}`,
+            symbol,
+            name,
             type: this.determineTokenType(input.Token),
-            decimals: input.decimals || 12,
+            decimals,
             rawData: input
         };
     }
@@ -72,12 +96,35 @@ export class TokenFactory implements ITokenFactory {
         const token2Str = token2.Token ? `Token-${token2.Token}` : `ForeignAsset-${token2.ForeignAsset}`;
         const key = `DexShare-${token1Str}-${token2Str}`;
         
+        let symbol = input.symbol || `LP-${token1Str.slice(0,5)}-${token2Str.slice(0,5)}`;
+        let name = input.name || `Dex Share ${token1Str} ${token2Str}`;
+        let decimals = input.decimals || 12;
+
+        // 针对不同Method的特殊处理
+        if (input.method) {
+            switch(input.method) {
+                case 'dex.swapWithExactSupply':
+                case 'dex.swapWithExactTarget':
+                    const path = input.params?.path || [];
+                    if (path.length >= 2) {
+                        symbol = `LP-${path[0].Token || path[0].ForeignAsset}-${path[1].Token || path[1].ForeignAsset}`;
+                        name = `Swap Pool ${symbol}`;
+                    }
+                    break;
+                case 'dex.addLiquidity':
+                case 'dex.removeLiquidity':
+                    symbol = `LP-${token1Str.slice(0,5)}-${token2Str.slice(0,5)}`;
+                    name = `Liquidity Pool ${symbol}`;
+                    break;
+            }
+        }
+
         return {
             key,
-            symbol: input.symbol || `LP-${token1Str.slice(0,5)}-${token2Str.slice(0,5)}`,
-            name: input.name || `Dex Share ${token1Str} ${token2Str}`,
+            symbol,
+            name,
             type: 'LP',
-            decimals: input.decimals || 12,
+            decimals,
             rawData: input
         };
     }
