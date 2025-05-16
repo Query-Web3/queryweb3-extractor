@@ -120,7 +120,7 @@ CREATE TABLE `fact_token_monthly_stats` (
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`) USING BTREE,
   UNIQUE KEY `unique_daily_stats` (`token_id`,`date`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='代币每日统计数据表';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='代币每月统计数据表';
 
 -- ----------------------------
 -- Table structure for fact_token_weekly_stats
@@ -141,7 +141,7 @@ CREATE TABLE `fact_token_weekly_stats` (
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`) USING BTREE,
   UNIQUE KEY `unique_daily_stats` (`token_id`,`date`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='代币每日统计数据表';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='代币每周统计数据表';
 
 -- ----------------------------
 -- Table structure for fact_token_yearly_stats
@@ -162,7 +162,7 @@ CREATE TABLE `fact_token_yearly_stats` (
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`) USING BTREE,
   UNIQUE KEY `unique_daily_stats` (`token_id`,`date`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='代币每日统计数据表';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='代币每年统计数据表';
 
 -- ----------------------------
 -- Table structure for fact_yield_stats

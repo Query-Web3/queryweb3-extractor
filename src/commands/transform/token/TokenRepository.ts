@@ -38,8 +38,11 @@ export class TokenRepository implements ITokenRepository {
 
                     const assetType = await this.getOrCreateAssetType(assetTypeRepo, input.type);
 
+                    // 预处理rawData，确保所有参数可序列化
+                    const processedRawData = this.preprocessRawData(input.rawData);
+                    
                     const tokenData = {
-                        chain_id: typeof input.rawData?.chainId === 'number' ? input.rawData.chainId : 1,
+                        chain_id: typeof processedRawData?.chainId === 'number' ? processedRawData.chainId : 1,
                         address: input.key,
                         symbol: input.symbol,
                         name: input.name,
@@ -47,10 +50,10 @@ export class TokenRepository implements ITokenRepository {
                         asset_type_id: assetType.id,
                         updated_at: new Date(),
                         metadata: {
-                            method: input.rawData?.method || null,
-                            params: input.rawData?.params || null,
-                            eventData: input.rawData?.eventData || null,
-                            timestamp: input.rawData?.timestamp || new Date().toISOString()
+                            method: processedRawData?.method || null,
+                            params: processedRawData?.params || null,
+                            eventData: processedRawData?.eventData || null,
+                            timestamp: processedRawData?.timestamp || new Date().toISOString()
                         }
                     };
 
@@ -136,6 +139,44 @@ export class TokenRepository implements ITokenRepository {
             throw new Error('Failed to upsert token');
         }
         return token;
+    }
+
+    private preprocessRawData(rawData: any): any {
+        if (!rawData) return rawData;
+
+        // 特殊处理currencyId函数
+        if (rawData.currencyId && typeof rawData.currencyId === 'function') {
+            try {
+                rawData = {
+                    ...rawData,
+                    currencyId: rawData.currencyId()
+                };
+                this.logger.debug('Processed currencyId function', {
+                    original: '[Function]',
+                    result: rawData.currencyId
+                });
+            } catch (e) {
+                this.logger.error('Failed to process currencyId function', e instanceof Error ? e : new Error(String(e)));
+                rawData.currencyId = null;
+            }
+        }
+
+        // 深度处理剩余字段
+        const processValue = (value: any): any => {
+            if (value === null || value === undefined) return value;
+            if (typeof value === 'function') return null;
+            if (Array.isArray(value)) return value.map(processValue);
+            if (typeof value === 'object') {
+                const result: Record<string, any> = {};
+                for (const key in value) {
+                    result[key] = processValue(value[key]);
+                }
+                return result;
+            }
+            return value;
+        };
+
+        return processValue(rawData);
     }
 
     private getAssetTypeDescription(typeName: string): string {
