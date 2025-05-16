@@ -9,6 +9,7 @@ import { createClient } from 'redis';
 export class DimensionInitializer {
     private logger = Logger.getInstance();
     private redisClient: ReturnType<typeof createClient>;
+    private hasTableUpdates = false;
 
     constructor() {
         this.redisClient = createClient({
@@ -61,6 +62,7 @@ export class DimensionInitializer {
                 statCycleRepo.find()
             ]);
 
+            // 强制更新Redis缓存，即使表为空
             await Promise.all([
                 this.redisClient.set('dim:chains', JSON.stringify(chains)),
                 this.redisClient.set('dim:assetTypes', JSON.stringify(assetTypes)),
@@ -68,7 +70,13 @@ export class DimensionInitializer {
                 this.redisClient.set('dim:statCycles', JSON.stringify(statCycles))
             ]);
 
-            this.logger.debug('Cached all dimension tables to Redis');
+            if (this.hasTableUpdates || chains.length === 0 || assetTypes.length === 0 || 
+                returnTypes.length === 0 || statCycles.length === 0) {
+                this.logger.warn('Forced Redis cache update due to table updates or empty tables');
+            } else {
+                this.logger.debug('Cached all dimension tables to Redis');
+            }
+            this.hasTableUpdates = false; // 重置标志位
         } finally {
             cacheTimer.end();
         }
@@ -77,14 +85,15 @@ export class DimensionInitializer {
     private async initChain(dataSource: any): Promise<void> {
         this.logger.debug('Initializing chain');
         const repo = dataSource.getRepository(DimChain);
-        let chain = await repo.findOne({ where: { name: 'Acala' } });
-        if (!chain) {
-            chain = await repo.save({
-                name: 'Acala',
-                chainId: 1
-            });
-            this.logger.debug('Created new chain record');
-        }
+            let chain = await repo.findOne({ where: { name: 'Acala' } });
+            if (!chain) {
+                chain = await repo.save({
+                    name: 'Acala',
+                    chainId: 1
+                });
+                this.hasTableUpdates = true;
+                this.logger.debug('Created new chain record');
+            }
     }
 
     private async initAssetTypes(dataSource: any): Promise<void> {
@@ -101,6 +110,7 @@ export class DimensionInitializer {
             let existing = await repo.findOne({ where: { name: type.name } });
             if (!existing) {
                 await repo.save(type);
+                this.hasTableUpdates = true;
                 this.logger.debug(`Created asset type: ${type.name}`);
             }
         }
@@ -119,6 +129,7 @@ export class DimensionInitializer {
             let existing = await repo.findOne({ where: { name: type.name } });
             if (!existing) {
                 await repo.save(type);
+                this.hasTableUpdates = true;
                 this.logger.debug(`Created return type: ${type.name}`);
             }
         }
@@ -139,6 +150,7 @@ export class DimensionInitializer {
             let existing = await repo.findOne({ where: { name: cycle.name } });
             if (!existing) {
                 await repo.save(cycle);
+                this.hasTableUpdates = true;
                 this.logger.debug(`Created stat cycle: ${cycle.name}`);
             }
         }
