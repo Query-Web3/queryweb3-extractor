@@ -4,7 +4,7 @@ export interface NormalizedTokenInput {
     key: string;
     symbol: string;
     name: string;
-    type: 'Native' | 'LP' | 'Stablecoin' | 'ForeignAsset' | 'DexShare' | 'Other';
+    type: 'Native' | 'LP' | 'Stablecoin' | 'ForeignAsset' | 'DexShare' | 'ERC20' | 'Other';
     decimals: number;
     rawData: any;
 }

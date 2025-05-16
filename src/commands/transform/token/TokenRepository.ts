@@ -1,9 +1,13 @@
 import { DataSource } from 'typeorm';
+import PQueue from 'p-queue';
 import { DimToken } from '../../../entities/DimToken';
 import { DimAssetType } from '../../../entities/DimAssetType';
 import { initializeDataSource } from '../dataSource';
 import { Logger, LogLevel } from '../../../utils/logger';
 import { NormalizedTokenInput, ITokenRepository } from './types';
+
+// 全局队列，确保所有数据库操作串行执行
+const dbQueue = new PQueue({ concurrency: 1 });
 
 export class TokenRepository implements ITokenRepository {
     private logger = Logger.getInstance();
@@ -13,32 +17,29 @@ export class TokenRepository implements ITokenRepository {
     }
 
     public async upsertToken(input: NormalizedTokenInput): Promise<DimToken> {
+        return dbQueue.add(() => this.executeInTransaction(input)) as Promise<DimToken>;
+    }
+
+    private async executeInTransaction(input: NormalizedTokenInput): Promise<DimToken> {
         const dataSource = await initializeDataSource();
         const queryRunner = dataSource.createQueryRunner();
         await queryRunner.connect();
 
         try {
-            let retries = 5; // 增加重试次数
             let lastError: Error | null = null;
-            let delay = 100; // 初始延迟100ms
-            
-            while (retries-- > 0) {
+            const maxRetries = 3;
+            let retries = 0;
+
+            while (retries < maxRetries) {
                 await queryRunner.startTransaction();
                 try {
                     const tokenRepo = queryRunner.manager.getRepository(DimToken);
                     const assetTypeRepo = queryRunner.manager.getRepository(DimAssetType);
 
-                    // 获取或创建assetType
                     const assetType = await this.getOrCreateAssetType(assetTypeRepo, input.type);
 
-                    // 构建token数据 - 确保chain_id有有效值
-                    const chainId = typeof input.rawData?.chainId === 'number' 
-                        ? input.rawData.chainId 
-                        : 1; // 默认Acala链
-                    
-                    // 构建token数据 - 包含Method特定信息
                     const tokenData = {
-                        chain_id: chainId,
+                        chain_id: typeof input.rawData?.chainId === 'number' ? input.rawData.chainId : 1,
                         address: input.key,
                         symbol: input.symbol,
                         name: input.name,
@@ -53,30 +54,21 @@ export class TokenRepository implements ITokenRepository {
                         }
                     };
 
-                    // 执行upsert操作
                     const token = await this.doUpsert(tokenRepo, tokenData);
                     await queryRunner.commitTransaction();
                     return token;
                 } catch (error) {
                     await queryRunner.rollbackTransaction();
                     lastError = error as Error;
-                    this.logger.error(`Failed to upsert token (${retries} retries left)`, lastError, {
-                        tokenKey: input.key,
-                        method: input.rawData?.method,
-                        params: input.rawData?.params
-                    });
+                    this.logger.error(`Failed to upsert token (attempt ${retries + 1}/${maxRetries})`, lastError);
+                    retries++;
                     
-                    if (retries > 0) {
-                        // 指数退避策略
-                        await new Promise(resolve => setTimeout(resolve, delay));
-                        delay = Math.min(delay * 2, 2000); // 最大延迟2秒
-                        continue;
+                    if (retries < maxRetries) {
+                        await new Promise(resolve => setTimeout(resolve, 100 * retries));
                     }
-                    
-                    throw lastError;
                 }
             }
-            throw lastError || new Error(`Failed to upsert token after 5 retries`);
+            throw lastError || new Error(`Failed to upsert token after ${maxRetries} attempts`);
         } finally {
             await queryRunner.release();
         }
@@ -111,7 +103,10 @@ export class TokenRepository implements ITokenRepository {
                 chainId: tokenData.chain_id,
                 address: tokenData.address
             },
-            lock: { mode: 'pessimistic_write' }
+            lock: { 
+                mode: 'pessimistic_write',
+                onLocked: 'nowait' // 不等待锁，直接失败
+            }
         });
 
         if (!token) {

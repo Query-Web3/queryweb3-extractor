@@ -158,11 +158,26 @@ export class TokenFactory implements ITokenFactory {
                 key = JSON.stringify(key);
             }
         }
+        let type: 'Native' | 'LP' | 'Stablecoin' | 'ForeignAsset' | 'DexShare' | 'ERC20' | 'Other' = 'Other';
+        
+        // 根据key格式推断类型
+        if (key.startsWith('LP-')) {
+            type = 'LP';
+        } else if (key.startsWith('FA')) {
+            type = 'ForeignAsset';
+        } else if (key.startsWith('0x') && key.length === 42) {
+            type = 'ERC20';
+        } else if (key === 'ACA') {
+            type = 'Native';
+        } else if (key === 'AUSD') {
+            type = 'Stablecoin';
+        }
+
         return {
             key,
             symbol: input.symbol || key.slice(0, 20),
             name: input.name || key.slice(0, 100),
-            type: 'Other',
+            type,
             decimals: input.decimals || 12,
             rawData: input
         };
@@ -187,19 +202,39 @@ export class TokenFactory implements ITokenFactory {
             });
             key = JSON.stringify(input);
         }
+        let type: 'Native' | 'LP' | 'Stablecoin' | 'ForeignAsset' | 'DexShare' | 'ERC20' | 'Other' = 'Other';
+        
+        // 根据key格式推断类型
+        if (typeof input === 'string') {
+            if (input.startsWith('LP-')) {
+                type = 'LP';
+            } else if (input.startsWith('FA')) {
+                type = 'ForeignAsset';
+            } else if (input.startsWith('0x') && input.length === 42) {
+                type = 'ERC20';
+            } else if (input === 'ACA') {
+                type = 'Native';
+            } else if (input === 'AUSD') {
+                type = 'Stablecoin';
+            }
+        }
+
         return {
             key,
             symbol: key.slice(0, 20),
             name: key.slice(0, 100),
-            type: 'Other',
+            type,
             decimals: 12,
             rawData: input
         };
     }
 
-    private determineTokenType(tokenSymbol: string): 'Native' | 'Stablecoin' | 'Other' {
+    private determineTokenType(tokenSymbol: string): 'Native' | 'Stablecoin' | 'LP' | 'ForeignAsset' | 'ERC20' | 'Other' {
         if (tokenSymbol === 'ACA') return 'Native';
         if (tokenSymbol === 'AUSD') return 'Stablecoin';
+        if (tokenSymbol.startsWith('LP-')) return 'LP';
+        if (tokenSymbol.startsWith('FA')) return 'ForeignAsset';
+        if (tokenSymbol.startsWith('0x') && tokenSymbol.length === 42) return 'ERC20';
         return 'Other';
     }
 }
