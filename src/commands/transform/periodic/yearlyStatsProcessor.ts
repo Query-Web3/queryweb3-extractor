@@ -8,6 +8,89 @@ export class YearlyStatsProcessor {
         this.logger.setLogLevel(process.env.LOG_LEVEL as LogLevel || LogLevel.INFO);
     }
 
+    public async processAllTokens() {
+        const timer = this.logger.time('Process yearly stats for all tokens');
+        this.logger.info('Processing yearly stats for all tokens');
+        
+        try {
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const yearStart = new Date(today);
+            yearStart.setFullYear(yearStart.getFullYear() - 1);
+
+            // 1. 获取所有token
+            const tokens = await this.repository.tokenRepo.find();
+            
+            // 2. 为每个token计算年统计
+            for (const token of tokens) {
+                try {
+                    // 查询过去12个月的月统计数据
+                    const monthlyStats = await this.repository.monthlyStatRepo
+                        .createQueryBuilder('stat')
+                        .where('stat.token_id = :tokenId', { tokenId: token.id })
+                        .andWhere('stat.date BETWEEN :start AND :end', {
+                            start: yearStart,
+                            end: today
+                        })
+                        .getMany();
+
+                    // 计算年统计
+                    const yearlyVolume = monthlyStats.reduce((sum, stat) => sum + stat.volume, 0);
+                    const yearlyTxns = monthlyStats.reduce((sum, stat) => sum + stat.txnsCount, 0);
+                    const avgPrice = monthlyStats.reduce((sum, stat) => sum + stat.priceUsd, 0) / monthlyStats.length;
+
+                    // 获取同比数据
+                    const prevYearStart = new Date(yearStart);
+                    prevYearStart.setFullYear(prevYearStart.getFullYear() - 1);
+                    const prevYearEnd = new Date(today);
+                    prevYearEnd.setFullYear(prevYearEnd.getFullYear() - 1);
+
+                    const prevYearStats = await this.repository.monthlyStatRepo
+                        .createQueryBuilder('stat')
+                        .select('SUM(stat.volume) as volume, SUM(stat.txns_count) as txns_count')
+                        .where('stat.token_id = :tokenId', { tokenId: token.id })
+                        .andWhere('stat.date BETWEEN :start AND :end', {
+                            start: prevYearStart,
+                            end: prevYearEnd
+                        })
+                        .getRawOne();
+
+                    // 计算同比变化
+                    const volumeYoY = prevYearStats?.volume ? 
+                        ((yearlyVolume - prevYearStats.volume) / prevYearStats.volume * 100) : 0;
+                    const txnsYoY = prevYearStats?.txns_count ?
+                        ((yearlyTxns - prevYearStats.txns_count) / prevYearStats.txns_count * 100) : 0;
+
+                    // 保存年统计
+                    const yearlyStat = {
+                        tokenId: token.id,
+                        date: today,
+                        volume: yearlyVolume,
+                        volumeUsd: yearlyVolume * avgPrice,
+                        txnsCount: yearlyTxns,
+                        priceUsd: avgPrice,
+                        volumeYoy: volumeYoY,
+                        txnsYoy: txnsYoY
+                    };
+
+                    await this.repository.yearlyStatRepo.upsert(yearlyStat, {
+                        conflictPaths: ['tokenId', 'date'],
+                        skipUpdateIfNoValuesChanged: true
+                    });
+                } catch (error) {
+                    this.logger.error(`Error processing yearly stats for token ${token.symbol}`, error as Error);
+                    continue;
+                }
+            }
+
+            timer.end();
+            return true;
+        } catch (error) {
+            this.logger.error('Error processing yearly stats for all tokens', error as Error);
+            return false;
+        }
+    }
+
     public async processToken(token: DimToken) {
         const tokenTimer = this.logger.time(`Process yearly stats for token ${token.symbol}`);
         this.logger.info(`Processing yearly stats for token ${token.symbol} (${token.address})`);

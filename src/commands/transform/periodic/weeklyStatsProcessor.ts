@@ -8,6 +8,89 @@ export class WeeklyStatsProcessor {
         this.logger.setLogLevel(process.env.LOG_LEVEL as LogLevel || LogLevel.INFO);
     }
 
+    public async processAllTokens() {
+        const timer = this.logger.time('Process weekly stats for all tokens');
+        this.logger.info('Processing weekly stats for all tokens');
+        
+        try {
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const weekStart = new Date(today);
+            weekStart.setDate(weekStart.getDate() - 7);
+
+            // 1. 获取所有token
+            const tokens = await this.repository.tokenRepo.find();
+            
+            // 2. 为每个token计算周统计
+            for (const token of tokens) {
+                try {
+                    // 查询过去7天的日统计数据
+                    const dailyStats = await this.repository.dailyStatRepo
+                        .createQueryBuilder('stat')
+                        .where('stat.token_id = :tokenId', { tokenId: token.id })
+                        .andWhere('stat.date BETWEEN :start AND :end', {
+                            start: weekStart,
+                            end: today
+                        })
+                        .getMany();
+
+                    // 计算周统计
+                    const weeklyVolume = dailyStats.reduce((sum, stat) => sum + stat.volume, 0);
+                    const weeklyTxns = dailyStats.reduce((sum, stat) => sum + stat.txnsCount, 0);
+                    const avgPrice = dailyStats.reduce((sum, stat) => sum + stat.priceUsd, 0) / dailyStats.length;
+
+                    // 获取同比数据
+                    const prevYearWeekStart = new Date(weekStart);
+                    prevYearWeekStart.setFullYear(prevYearWeekStart.getFullYear() - 1);
+                    const prevYearWeekEnd = new Date(today);
+                    prevYearWeekEnd.setFullYear(prevYearWeekEnd.getFullYear() - 1);
+
+                    const prevYearStats = await this.repository.dailyStatRepo
+                        .createQueryBuilder('stat')
+                        .select('SUM(stat.volume) as volume, SUM(stat.txns_count) as txns_count')
+                        .where('stat.token_id = :tokenId', { tokenId: token.id })
+                        .andWhere('stat.date BETWEEN :start AND :end', {
+                            start: prevYearWeekStart,
+                            end: prevYearWeekEnd
+                        })
+                        .getRawOne();
+
+                    // 计算同比变化
+                    const volumeYoY = prevYearStats?.volume ? 
+                        ((weeklyVolume - prevYearStats.volume) / prevYearStats.volume * 100) : 0;
+                    const txnsYoY = prevYearStats?.txns_count ?
+                        ((weeklyTxns - prevYearStats.txns_count) / prevYearStats.txns_count * 100) : 0;
+
+                    // 保存周统计
+                    const weeklyStat = {
+                        tokenId: token.id,
+                        date: today,
+                        volume: weeklyVolume,
+                        volumeUsd: weeklyVolume * avgPrice,
+                        txnsCount: weeklyTxns,
+                        priceUsd: avgPrice,
+                        volumeYoy: volumeYoY,
+                        txnsYoy: txnsYoY
+                    };
+
+                    await this.repository.weeklyStatRepo.upsert(weeklyStat, {
+                        conflictPaths: ['tokenId', 'date'],
+                        skipUpdateIfNoValuesChanged: true
+                    });
+                } catch (error) {
+                    this.logger.error(`Error processing weekly stats for token ${token.symbol}`, error as Error);
+                    continue;
+                }
+            }
+
+            timer.end();
+            return true;
+        } catch (error) {
+            this.logger.error('Error processing weekly stats for all tokens', error as Error);
+            return false;
+        }
+    }
+
     public async processToken(token: DimToken) {
         const tokenTimer = this.logger.time(`Process weekly stats for token ${token.symbol}`);
         this.logger.info(`Processing weekly stats for token ${token.symbol} (${token.address})`);

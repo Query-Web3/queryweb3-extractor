@@ -8,6 +8,89 @@ export class MonthlyStatsProcessor {
         this.logger.setLogLevel(process.env.LOG_LEVEL as LogLevel || LogLevel.INFO);
     }
 
+    public async processAllTokens() {
+        const timer = this.logger.time('Process monthly stats for all tokens');
+        this.logger.info('Processing monthly stats for all tokens');
+        
+        try {
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const monthStart = new Date(today);
+            monthStart.setMonth(monthStart.getMonth() - 1);
+
+            // 1. 获取所有token
+            const tokens = await this.repository.tokenRepo.find();
+            
+            // 2. 为每个token计算月统计
+            for (const token of tokens) {
+                try {
+                    // 查询过去4周的周统计数据
+                    const weeklyStats = await this.repository.weeklyStatRepo
+                        .createQueryBuilder('stat')
+                        .where('stat.token_id = :tokenId', { tokenId: token.id })
+                        .andWhere('stat.date BETWEEN :start AND :end', {
+                            start: monthStart,
+                            end: today
+                        })
+                        .getMany();
+
+                    // 计算月统计
+                    const monthlyVolume = weeklyStats.reduce((sum, stat) => sum + stat.volume, 0);
+                    const monthlyTxns = weeklyStats.reduce((sum, stat) => sum + stat.txnsCount, 0);
+                    const avgPrice = weeklyStats.reduce((sum, stat) => sum + stat.priceUsd, 0) / weeklyStats.length;
+
+                    // 获取同比数据
+                    const prevYearMonthStart = new Date(monthStart);
+                    prevYearMonthStart.setFullYear(prevYearMonthStart.getFullYear() - 1);
+                    const prevYearMonthEnd = new Date(today);
+                    prevYearMonthEnd.setFullYear(prevYearMonthEnd.getFullYear() - 1);
+
+                    const prevYearStats = await this.repository.weeklyStatRepo
+                        .createQueryBuilder('stat')
+                        .select('SUM(stat.volume) as volume, SUM(stat.txns_count) as txns_count')
+                        .where('stat.token_id = :tokenId', { tokenId: token.id })
+                        .andWhere('stat.date BETWEEN :start AND :end', {
+                            start: prevYearMonthStart,
+                            end: prevYearMonthEnd
+                        })
+                        .getRawOne();
+
+                    // 计算同比变化
+                    const volumeYoY = prevYearStats?.volume ? 
+                        ((monthlyVolume - prevYearStats.volume) / prevYearStats.volume * 100) : 0;
+                    const txnsYoY = prevYearStats?.txns_count ?
+                        ((monthlyTxns - prevYearStats.txns_count) / prevYearStats.txns_count * 100) : 0;
+
+                    // 保存月统计
+                    const monthlyStat = {
+                        tokenId: token.id,
+                        date: today,
+                        volume: monthlyVolume,
+                        volumeUsd: monthlyVolume * avgPrice,
+                        txnsCount: monthlyTxns,
+                        priceUsd: avgPrice,
+                        volumeYoy: volumeYoY,
+                        txnsYoy: txnsYoY
+                    };
+
+                    await this.repository.monthlyStatRepo.upsert(monthlyStat, {
+                        conflictPaths: ['tokenId', 'date'],
+                        skipUpdateIfNoValuesChanged: true
+                    });
+                } catch (error) {
+                    this.logger.error(`Error processing monthly stats for token ${token.symbol}`, error as Error);
+                    continue;
+                }
+            }
+
+            timer.end();
+            return true;
+        } catch (error) {
+            this.logger.error('Error processing monthly stats for all tokens', error as Error);
+            return false;
+        }
+    }
+
     public async processToken(token: DimToken) {
         const tokenTimer = this.logger.time(`Process monthly stats for token ${token.symbol}`);
         this.logger.info(`Processing monthly stats for token ${token.symbol} (${token.address})`);

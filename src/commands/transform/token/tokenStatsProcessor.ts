@@ -23,40 +23,21 @@ export async function processTokenStats() {
     const monthlyProcessor = new MonthlyStatsProcessor(repository, logger);
     const yearlyProcessor = new YearlyStatsProcessor(repository, logger);
 
-    const tokens = await repository.tokenRepo.find();
-    logger.info(`Processing stats for ${tokens.length} tokens`);
+    // 1. 先处理所有token的日统计（按天聚合）
+    await dailyProcessor.processAllTokens();
     
-    for (const token of tokens) {
-        try {
-            // Process stats sequentially with retry
-            const processors = [
-                () => dailyProcessor.processToken(token),
-                () => weeklyProcessor.processToken(token),
-                () => monthlyProcessor.processToken(token),
-                () => yearlyProcessor.processToken(token)
-            ];
-
-            for (const processor of processors) {
-                let retries = 3;
-                while (retries > 0) {
-                    try {
-                        await processor();
-                        break;
-                    } catch (error) {
-                        retries--;
-                        if (retries === 0) {
-                            throw error;
-                        }
-                        logger.warn(`Retrying (${retries} left) for token ${token.symbol}`, error as Error);
-                        await new Promise(resolve => setTimeout(resolve, 100 * (4 - retries)));
-                    }
-                }
-            }
-        } catch (error) {
-            logger.error(`Error processing token ${token.symbol}`, error as Error);
-            continue;
-        }
-    }
+    // 2. 获取所有token列表
+    const tokens = await repository.tokenRepo.find();
+    logger.info(`Processing weekly/monthly/yearly stats for ${tokens.length} tokens`);
+    
+    // 3. 基于日统计结果处理周统计
+    await weeklyProcessor.processAllTokens();
+    
+    // 4. 基于周统计结果处理月统计
+    await monthlyProcessor.processAllTokens();
+    
+    // 5. 基于月统计结果处理年统计
+    await yearlyProcessor.processAllTokens();
     
     logger.info('Finished processing all token stats');
     statsTimer.end();

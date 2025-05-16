@@ -13,6 +13,108 @@ export class DailyStatsProcessor {
         this.logger.setLogLevel(process.env.LOG_LEVEL as LogLevel || LogLevel.INFO);
     }
 
+    public async processAllTokens() {
+        const timer = this.logger.time('Process daily stats for all tokens');
+        this.logger.info('Processing daily stats for all tokens');
+        
+        try {
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            
+            // 1. 按天聚合所有token的区块数据
+            const dailyEvents = await this.repository.eventRepo.createQueryBuilder('event')
+                .leftJoinAndSelect('event.block', 'block')
+                .where(`(
+                    (event.section = 'Tokens' AND event.method = 'Transfer') OR
+                    (event.section = 'Balances' AND event.method = 'Transfer') OR
+                    (event.section = 'Dex' AND event.method = 'Swap') OR
+                    (event.section = 'Homa' AND event.method = 'Minted') OR
+                    (event.section = 'Homa' AND event.method = 'Redeemed')
+                )`)
+                .andWhere('block.timestamp >= :start AND block.timestamp < :end', {
+                    start: today,
+                    end: new Date(today.getTime() + 24 * 60 * 60 * 1000)
+                })
+                .getMany();
+
+            // 2. 按token分组计算日统计
+            const tokenStats = new Map<string, {volume: number, txns: number}>();
+            
+            for (const event of dailyEvents) {
+                const tokenAddress = this.extractTokenAddress(event);
+                if (!tokenAddress) continue;
+                
+                if (!tokenStats.has(tokenAddress)) {
+                    tokenStats.set(tokenAddress, {volume: 0, txns: 0});
+                }
+                
+                const stats = tokenStats.get(tokenAddress)!;
+                stats.txns += 1;
+                
+                if (event.section === 'Dex' && event.method === 'Swap') {
+                    stats.volume += parseFloat(event.data.amountIn || '0') + parseFloat(event.data.amountOut || '0');
+                } else if (event.data.amount) {
+                    stats.volume += parseFloat(event.data.amount);
+                }
+            }
+
+            // 3. 保存所有token的日统计
+            const tokens = await this.repository.tokenRepo.find();
+            for (const token of tokens) {
+                const stats = tokenStats.get(token.address);
+                if (!stats) continue;
+                
+                await this.processTokenStats(token, stats.volume, stats.txns, today);
+            }
+
+            timer.end();
+            return true;
+        } catch (error) {
+            this.logger.error('Error processing daily stats for all tokens', error as Error);
+            return false;
+        }
+    }
+
+    private extractTokenAddress(event: any): string | null {
+        // 实现从事件数据中提取token地址的逻辑
+        if (event.data?.currencyId) return event.data.currencyId;
+        if (event.data?.token) return event.data.token;
+        if (event.data?.assetId) return event.data.assetId;
+        return null;
+    }
+
+    private async processTokenStats(
+        token: DimToken,
+        volume: number,
+        txns: number,
+        date: Date
+    ): Promise<boolean> {
+        // 实现保存单个token日统计的逻辑
+        // 这部分可以从原来的processToken方法中提取出来
+        try {
+            const tokenPrice = await getTokenPriceFromOracle(token.address) ?? 1.0;
+            
+            const statData = {
+                tokenId: token.id,
+                date,
+                volume,
+                volumeUsd: volume * tokenPrice,
+                txnsCount: txns,
+                priceUsd: tokenPrice
+            };
+
+            await this.repository.dailyStatRepo.upsert(statData, {
+                conflictPaths: ['tokenId', 'date'],
+                skipUpdateIfNoValuesChanged: true
+            });
+            
+            return true;
+        } catch (error) {
+            this.logger.error(`Error saving daily stats for token ${token.symbol}`, error as Error);
+            return false;
+        }
+    }
+
     public async processToken(token: DimToken) {
         const tokenTimer = this.logger.time(`Process token ${token.symbol}`);
         this.logger.info(`Processing daily stats for token ${token.symbol} (${token.address})`);
