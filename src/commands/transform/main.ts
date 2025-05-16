@@ -188,26 +188,54 @@ export async function transformData(batchLog?: BatchLog) {
                     new TokenFactory()
                 );
                 
-                const BATCH_SIZE = 100; // 每批处理100个token
                 const tokenArray = Array.from(tokenIds);
-                let processed = 0;
+                logger.info(`Found ${tokenArray.length} tokens to process`);
                 
-                while (processed < tokenArray.length) {
-                    const batch = tokenArray.slice(processed, processed + BATCH_SIZE);
-                    logger.info(`Processing tokens batch ${processed + 1}-${Math.min(processed + BATCH_SIZE, tokenArray.length)}/${tokenArray.length}`);
-                    
-                    await Promise.all(batch.map(tokenId => 
-                        tokenService.upsertToken(tokenId)
-                            .then(() => logger.recordSuccess())
-                            .catch(e => {
-                                logger.error(`Failed to process token ${tokenId}`, e as Error);
-                                logger.recordError();
-                            })
-                    ));
-                    
-                    processed += BATCH_SIZE;
+                // 处理前检查数据库现有token
+                const existingTokens = await dataSource.getRepository(DimToken).find();
+                logger.info(`Found ${existingTokens.length} existing tokens in database`);
+                
+                let insertedCount = 0;
+                let updatedCount = 0;
+                
+                for (const tokenId of tokenArray) {
+                    try {
+                        const beforeCount = await dataSource.getRepository(DimToken).count();
+                        
+                        const token = await tokenService.upsertToken(tokenId);
+                        
+                        const afterCount = await dataSource.getRepository(DimToken).count();
+                        
+                        if (afterCount > beforeCount) {
+                            insertedCount++;
+                            logger.info(`Inserted new token: ${tokenId}`);
+                        } else {
+                            updatedCount++;
+                            logger.debug(`Updated existing token: ${tokenId}`);
+                        }
+                        
+                        logger.recordSuccess();
+                    } catch (e) {
+                        logger.error(`Failed to process token ${tokenId}`, e as Error);
+                        logger.recordError();
+                    }
                 }
+                
+                logger.info(`Token processing completed. Inserted: ${insertedCount}, Updated: ${updatedCount}`);
                 tokenTimer.end();
+                
+                // 强制刷新Redis缓存
+                try {
+                    const allTokens = await dataSource.getRepository(DimToken).find();
+                    await tokenService['redisClient'].set(
+                        'dim_tokens',
+                        JSON.stringify(allTokens),
+                        { EX: 3600 }
+                    );
+                    logger.info(`Updated Redis cache with ${allTokens.length} tokens`);
+                } catch (e) {
+                    logger.error('Failed to update Redis cache', e as Error);
+                }
             }
 
             // Validate data consistency

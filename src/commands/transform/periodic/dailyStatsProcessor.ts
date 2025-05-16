@@ -89,28 +89,68 @@ export class DailyStatsProcessor {
         txns: number,
         date: Date
     ): Promise<boolean> {
-        // 实现保存单个token日统计的逻辑
-        // 这部分可以从原来的processToken方法中提取出来
         try {
-            const tokenPrice = await getTokenPriceFromOracle(token.address) ?? 1.0;
+            this.logger.debug(`Processing daily stats for token ${token.symbol}`);
             
+            // 获取token价格，处理异常情况
+            let tokenPrice = 1.0;
+            try {
+                const price = await getTokenPriceFromOracle(token.address);
+                if (price !== null && !isNaN(price) && isFinite(price)) {
+                    tokenPrice = price;
+                }
+            } catch (e) {
+                this.logger.warn(`Failed to get price for ${token.symbol}, using default 1.0`);
+            }
+
+            // 确保所有数值有效
+            const safeVolume = isNaN(volume) || !isFinite(volume) ? 0 : volume;
+            const safeTxns = isNaN(txns) || !isFinite(txns) ? 0 : txns;
+            const safeTokenPrice = isNaN(tokenPrice) || !isFinite(tokenPrice) ? 1.0 : tokenPrice;
+            
+            // 计算volumeUsd并确保有效
+            const safeVolumeUsd = isFinite(safeVolume * safeTokenPrice) ? safeVolume * safeTokenPrice : 0;
+
             const statData = {
                 tokenId: token.id,
                 date,
-                volume,
-                volumeUsd: volume * tokenPrice,
-                txnsCount: txns,
-                priceUsd: tokenPrice
+                volume: safeVolume,
+                volumeUsd: safeVolumeUsd,
+                txnsCount: safeTxns,
+                priceUsd: safeTokenPrice
             };
 
-            await this.repository.dailyStatRepo.upsert(statData, {
+            // 使用repository的dailyStatRepo进行数据操作
+            const result = await this.repository.dailyStatRepo.upsert(statData, {
                 conflictPaths: ['tokenId', 'date'],
                 skipUpdateIfNoValuesChanged: true
             });
+
+            if (!result.identifiers?.length) {
+                throw new Error(`Failed to upsert daily stats for token ${token.symbol}`);
+            }
+
+            // 验证数据写入
+            const writtenStat = await this.repository.dailyStatRepo.findOne({
+                where: {
+                    tokenId: token.id,
+                    date: date
+                }
+            });
             
+            if (!writtenStat) {
+                throw new Error(`Failed to verify written stats for token ${token.symbol}`);
+            }
+            
+            this.logger.info(`Successfully processed daily stats for token ${token.symbol}`);
             return true;
         } catch (error) {
-            this.logger.error(`Error saving daily stats for token ${token.symbol}`, error as Error);
+            this.logger.error(`Error saving daily stats for token ${token.symbol}`, 
+                error instanceof Error ? error : new Error(String(error)));
+            this.logger.debug('Error details:', {
+                tokenId: token.id,
+                date: date.toISOString()
+            });
             return false;
         }
     }
@@ -152,15 +192,17 @@ export class DailyStatsProcessor {
             const dailyTxns = events.length;
 
             // Get token price from oracle (use default 1.0 if not available or fails)
+            // 获取token价格，处理异常情况
             let tokenPrice = 1.0;
             try {
                 const price = await getTokenPriceFromOracle(token.address);
-                if (price !== null && price !== undefined) {
+                if (price !== null && !isNaN(price) && isFinite(price)) {
                     tokenPrice = price;
                 }
             } catch (error) {
                 this.logger.warn(`Failed to get price for token ${token.symbol}, using default 1.0`, error as Error);
             }
+            const safeTokenPrice = isNaN(tokenPrice) || !isFinite(tokenPrice) ? 1.0 : tokenPrice;
             
             const today = new Date();
             today.setHours(0, 0, 0, 0);
@@ -248,17 +290,26 @@ export class DailyStatsProcessor {
                 }
 
                 // 构建符合实体类型的statData对象
+                // 确保所有数值有效
+                const safeVolume = isNaN(dailyVolume) || !isFinite(dailyVolume) ? 0 : dailyVolume;
+                const safeTxns = isNaN(dailyTxns) || !isFinite(dailyTxns) ? 0 : dailyTxns;
+                const safeVolumeUsd = isFinite(safeVolume * safeTokenPrice) ? safeVolume * safeTokenPrice : 0;
+                const safeVolumeYoY = isNaN(volumeYoY) || !isFinite(volumeYoY) ? 0 : volumeYoY;
+                const safeVolumeQoQ = isNaN(volumeQoQ) || !isFinite(volumeQoQ) ? 0 : volumeQoQ;
+                const safeTxnsYoY = isNaN(txnsYoY) || !isFinite(txnsYoY) ? 0 : txnsYoY;
+                const safeTxnsQoQ = isNaN(txnsQoQ) || !isFinite(txnsQoQ) ? 0 : txnsQoQ;
+
                 const statData: Partial<FactTokenDailyStat> = {
                     tokenId: tokenRecord.id,
                     date: today,
-                    volume: dailyVolume,
-                    volumeUsd: dailyVolume * tokenPrice,
-                    txnsCount: dailyTxns,
-                    priceUsd: tokenPrice,
-                    volumeYoy: volumeYoY ?? undefined,
-                    volumeQoq: volumeQoQ ?? undefined,
-                    txnsYoy: txnsYoY ?? undefined,
-                    txnsQoq: txnsQoQ
+                    volume: safeVolume,
+                    volumeUsd: safeVolumeUsd,
+                    txnsCount: safeTxns,
+                    priceUsd: safeTokenPrice,
+                    volumeYoy: safeVolumeYoY,
+                    volumeQoq: safeVolumeQoQ,
+                    txnsYoy: safeTxnsYoY,
+                    txnsQoq: safeTxnsQoQ
                 };
 
                 // 验证statData中的tokenId

@@ -37,7 +37,13 @@ export class WeeklyStatsProcessor {
                     // 计算周统计
                     const weeklyVolume = dailyStats.reduce((sum, stat) => sum + stat.volume, 0);
                     const weeklyTxns = dailyStats.reduce((sum, stat) => sum + stat.txnsCount, 0);
-                    const avgPrice = dailyStats.reduce((sum, stat) => sum + stat.priceUsd, 0) / dailyStats.length;
+                    
+                    // 计算平均价格，处理NaN情况
+                    const avgPrice = dailyStats.length > 0 ? 
+                        dailyStats.reduce((sum, stat) => sum + (stat.priceUsd || 0), 0) / dailyStats.length : 0;
+                    
+                    // 确保volumeUsd有效
+                    const safeVolumeUsd = isFinite(weeklyVolume * avgPrice) ? weeklyVolume * avgPrice : 0;
 
                     // 获取同比数据
                     const prevYearWeekStart = new Date(weekStart);
@@ -66,9 +72,9 @@ export class WeeklyStatsProcessor {
                         tokenId: token.id,
                         date: today,
                         volume: weeklyVolume,
-                        volumeUsd: weeklyVolume * avgPrice,
+                        volumeUsd: safeVolumeUsd,
                         txnsCount: weeklyTxns,
-                        priceUsd: avgPrice,
+                        priceUsd: isFinite(avgPrice) ? avgPrice : 0,
                         volumeYoy: volumeYoY,
                         txnsYoy: txnsYoY
                     };
@@ -102,7 +108,6 @@ export class WeeklyStatsProcessor {
             lastWeek.setDate(lastWeek.getDate() - 7);
 
             // Get weekly events
-            // 查询所有相关事件（不包含Rewards事件）
             const baseEvents = await this.repository.eventRepo.createQueryBuilder('event')
                 .leftJoinAndSelect('event.block', 'block')
                 .where('(event.section = :section1 AND event.method = :method1) OR ' +
@@ -116,7 +121,6 @@ export class WeeklyStatsProcessor {
                 .andWhere('block.timestamp BETWEEN :start AND :end', { start: lastWeek, end: today })
                 .getMany();
 
-            // 单独查询Rewards事件（不添加data条件）
             const rewardEvents = await this.repository.eventRepo.createQueryBuilder('event')
                 .leftJoinAndSelect('event.block', 'block')
                 .where('event.section = :section AND event.method = :method', {
@@ -126,7 +130,6 @@ export class WeeklyStatsProcessor {
                 .andWhere('block.timestamp BETWEEN :start AND :end', { start: lastWeek, end: today })
                 .getMany();
 
-            // 合并并过滤事件
             const weeklyEvents = [
                 ...baseEvents.filter(e => JSON.stringify(e.data).includes(`"${token.address}"`)),
                 ...rewardEvents.filter(e => 
@@ -148,22 +151,13 @@ export class WeeklyStatsProcessor {
 
             const weeklyTxns = weeklyEvents.length;
 
-            // Get token price from oracle (use default 1.0 if not available)
             const tokenPrice = await getTokenPriceFromOracle(token.address) ?? 1.0;
+            const safeTokenPrice = isFinite(tokenPrice) ? tokenPrice : 1.0;
 
-            // Get previous stats for comparisons
-            const prevWeekStat = await this.repository.weeklyStatRepo.findOne({ 
-                where: { tokenId: token.id, date: new Date(today.setDate(today.getDate() - 14)) } 
-            });
-            const prevYearStat = await this.repository.yearlyStatRepo.findOne({ 
-                where: { tokenId: token.id, date: new Date(today.setFullYear(today.getFullYear() - 1)) } 
-            });
-
-            // Find token in dim_tokens table by symbol or name
             const tokenRecord = await this.repository.tokenRepo.findOne({
                 where: [
                     { symbol: token.symbol },
-                    { name: token.symbol } // Also try matching by name if symbol not found
+                    { name: token.symbol }
                 ]
             });
 
@@ -172,54 +166,55 @@ export class WeeklyStatsProcessor {
                 return false;
             }
 
-            this.logger.debug(`Found matching token record for ${token.symbol}: ID=${tokenRecord.id}`);
+            const prevWeekStat = await this.repository.weeklyStatRepo.findOne({ 
+                where: { tokenId: token.id, date: new Date(today.setDate(today.getDate() - 14)) } 
+            });
+            const prevYearStat = await this.repository.yearlyStatRepo.findOne({ 
+                where: { tokenId: token.id, date: new Date(today.setFullYear(today.getFullYear() - 1)) } 
+            });
 
-            // 检查数据完整性
             const hasFullWeekData = prevWeekStat && 
                 (new Date().getTime() - prevWeekStat.date.getTime()) > 7 * 24 * 60 * 60 * 1000;
             const hasFullYearData = prevYearStat && 
                 (new Date().getTime() - prevYearStat.date.getTime()) > 365 * 24 * 60 * 60 * 1000;
 
-            // 处理同比环比数据
             let volumeYoY = 0;
             let txnsYoY = 0;
             let volumeQoQ = 0;
             let txnsQoQ = 0;
 
-            if (!hasFullYearData) {
-                this.logger.warn(`Insufficient yearly data for ${token.symbol}, using 0% for YoY comparison`);
-            } else {
-                volumeYoY = ((weeklyVolume - prevYearStat.volume) / prevYearStat.volume * 100);
-                txnsYoY = ((weeklyTxns - prevYearStat.txnsCount) / prevYearStat.txnsCount * 100);
+            if (hasFullYearData) {
+                volumeYoY = prevYearStat.volume ? 
+                    ((weeklyVolume - prevYearStat.volume) / prevYearStat.volume * 100) : 0;
+                txnsYoY = prevYearStat.txnsCount ?
+                    ((weeklyTxns - prevYearStat.txnsCount) / prevYearStat.txnsCount * 100) : 0;
             }
 
-            if (!hasFullWeekData) {
-                this.logger.warn(`Insufficient weekly data for ${token.symbol}, using 0% for QoQ comparison`);
-            } else {
-                volumeQoQ = ((weeklyVolume - prevWeekStat.volume) / prevWeekStat.volume * 100);
-                txnsQoQ = ((weeklyTxns - prevWeekStat.txnsCount) / prevWeekStat.txnsCount * 100);
+            if (hasFullWeekData) {
+                volumeQoQ = prevWeekStat.volume ? 
+                    ((weeklyVolume - prevWeekStat.volume) / prevWeekStat.volume * 100) : 0;
+                txnsQoQ = prevWeekStat.txnsCount ?
+                    ((weeklyTxns - prevWeekStat.txnsCount) / prevWeekStat.txnsCount * 100) : 0;
             }
 
             const weeklyStat = {
                 tokenId: tokenRecord.id,
                 date: today,
                 volume: weeklyVolume,
-                volumeUsd: weeklyVolume * tokenPrice,
+                volumeUsd: isFinite(weeklyVolume * safeTokenPrice) ? weeklyVolume * safeTokenPrice : 0,
                 txnsCount: weeklyTxns,
-                priceUsd: tokenPrice,
+                priceUsd: safeTokenPrice,
                 volumeYoy: volumeYoY,
                 volumeQoq: volumeQoQ,
                 txnsYoy: txnsYoY,
                 txnsQoq: txnsQoQ
             };
 
-            // 使用upsert操作确保原子性
             const result = await this.repository.weeklyStatRepo.upsert(weeklyStat, {
                 conflictPaths: ['tokenId', 'date'],
                 skipUpdateIfNoValuesChanged: true
             });
             
-            this.logger.debug(`Upserted weekly stat for ${token.symbol}:`, result);
             if (!result.identifiers[0]?.id) {
                 throw new Error(`Failed to upsert weekly stat record for ${token.symbol}`);
             }

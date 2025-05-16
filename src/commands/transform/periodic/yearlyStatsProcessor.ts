@@ -37,7 +37,12 @@ export class YearlyStatsProcessor {
                     // 计算年统计
                     const yearlyVolume = monthlyStats.reduce((sum, stat) => sum + stat.volume, 0);
                     const yearlyTxns = monthlyStats.reduce((sum, stat) => sum + stat.txnsCount, 0);
-                    const avgPrice = monthlyStats.reduce((sum, stat) => sum + stat.priceUsd, 0) / monthlyStats.length;
+                    // 计算平均价格，处理NaN情况
+                    const avgPrice = monthlyStats.length > 0 ? 
+                        monthlyStats.reduce((sum, stat) => sum + (stat.priceUsd || 0), 0) / monthlyStats.length : 0;
+
+                    // 确保volumeUsd有效
+                    const safeVolumeUsd = isFinite(yearlyVolume * avgPrice) ? yearlyVolume * avgPrice : 0;
 
                     // 获取同比数据
                     const prevYearStart = new Date(yearStart);
@@ -66,7 +71,7 @@ export class YearlyStatsProcessor {
                         tokenId: token.id,
                         date: today,
                         volume: yearlyVolume,
-                        volumeUsd: yearlyVolume * avgPrice,
+                        volumeUsd: safeVolumeUsd,
                         txnsCount: yearlyTxns,
                         priceUsd: avgPrice,
                         volumeYoy: volumeYoY,

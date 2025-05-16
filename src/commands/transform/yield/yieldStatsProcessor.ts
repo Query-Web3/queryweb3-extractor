@@ -25,6 +25,7 @@ export async function processYieldStats() {
     await queryRunner.startTransaction();
 
     try {
+        console.log('Starting yield stats processing transaction');
         const tokenRepo = queryRunner.manager.getRepository(DimToken);
         const returnTypeRepo = queryRunner.manager.getRepository(DimReturnType);
         const yieldStatRepo = queryRunner.manager.getRepository(FactYieldStat);
@@ -76,12 +77,22 @@ export async function processYieldStats() {
         // Process tokens in parallel
         await Promise.all(tokens.map(async token => {
             const tokenRewards = rewardEvents.filter(e => {
-                const data = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
-                return data?.currencyId === token.address;
+                try {
+                    const data = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
+                    return data?.currencyId === token.address;
+                } catch (e) {
+                    console.error(`Failed to parse reward event data for token ${token.address}:`, e);
+                    return false;
+                }
             });
             const tokenTransfers = transferEvents.filter(e => {
-                const data = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
-                return data?.currencyId === token.address;
+                try {
+                    const data = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
+                    return data?.currencyId === token.address;
+                } catch (e) {
+                    console.error(`Failed to parse transfer event data for token ${token.address}:`, e);
+                    return false;
+                }
             });
 
             const dailyRewards = tokenRewards.reduce((sum, e) => {
@@ -93,9 +104,22 @@ export async function processYieldStats() {
                 return sum + parseFloat(data?.amount || '0');
             }, 0);
 
-            const tokenPrice = await getTokenPriceFromOracle(token.address) ?? 1.0;
-            const tvlUsd = tvl * tokenPrice;
-            const apy = tvl > 0 ? (dailyRewards * 365 / tvl * 100) : 0;
+            let tokenPrice = 1.0;
+            try {
+                const price = await getTokenPriceFromOracle(token.address);
+                if (price !== null && !isNaN(price)) {
+                    tokenPrice = price;
+                }
+            } catch (e) {
+                console.error(`Failed to get price for ${token.address}, using default 1.0`);
+            }
+
+            const safeTvl = isNaN(tvl) ? 0 : tvl;
+            const safeDailyRewards = isNaN(dailyRewards) ? 0 : dailyRewards;
+            const safeTokenPrice = isNaN(tokenPrice) ? 1.0 : tokenPrice;
+            
+            const tvlUsd = safeTvl * safeTokenPrice;
+            const apy = safeTvl > 0 ? (safeDailyRewards * 365 / safeTvl * 100) : 0;
             const poolAddress = await getCachedPoolAddress(token.address);
 
             // Batch process return types
@@ -110,13 +134,45 @@ export async function processYieldStats() {
                 tvlUsd
             }));
 
+            // Log stat updates before upsert
+            console.log(`Preparing to upsert stats for token ${token.address}:`, {
+                statUpdates: JSON.stringify(statUpdates, null, 2),
+                conflictColumns: ['tokenId', 'returnTypeId', 'date']
+            });
+
             // Bulk upsert stats
-            await yieldStatRepo.upsert(statUpdates, ['tokenId', 'returnTypeId', 'date']);
+            const upsertResult = await yieldStatRepo.upsert(statUpdates, ['tokenId', 'returnTypeId', 'date']);
+            console.log(`Upsert result for token ${token.address}:`, upsertResult);
+            
+            // Verify data was written
+            const writtenStats = await yieldStatRepo.find({
+                where: {
+                    tokenId: token.id,
+                    date: today
+                }
+            });
+            
+            if (writtenStats.length === 0) {
+                console.error(`No stats written for token ${token.address} on ${today}`);
+                // Try direct insert if upsert failed
+                try {
+                    await yieldStatRepo.insert(statUpdates);
+                    console.log(`Successfully inserted stats for token ${token.address}`);
+                } catch (insertError) {
+                    console.error(`Failed to insert stats for token ${token.address}:`, insertError);
+                }
+            } else {
+                console.log(`Successfully wrote ${writtenStats.length} stats for token ${token.address}`);
+                console.log('Sample written stat:', writtenStats[0]);
+            }
         }));
 
         await queryRunner.commitTransaction();
+        console.log('Successfully committed yield stats transaction');
     } catch (e) {
+        console.error('Failed to process yield stats:', e);
         await queryRunner.rollbackTransaction();
+        console.log('Rolled back yield stats transaction');
         throw e;
     } finally {
         await queryRunner.release();

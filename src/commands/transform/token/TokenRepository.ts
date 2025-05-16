@@ -17,7 +17,48 @@ export class TokenRepository implements ITokenRepository {
     }
 
     public async upsertToken(input: NormalizedTokenInput): Promise<DimToken> {
-        return dbQueue.add(() => this.executeInTransaction(input)) as Promise<DimToken>;
+        const dataSource = await initializeDataSource();
+        const tokenRepo = dataSource.getRepository(DimToken);
+        
+        // 记录操作前token数量
+        const beforeCount = await tokenRepo.count();
+        this.logger.debug(`Before upsert: ${beforeCount} tokens in database`);
+        
+        try {
+            // 查找现有token
+            let token = await tokenRepo.findOne({
+                where: { address: input.key }
+            });
+            
+            if (!token) {
+                this.logger.info(`Creating new token: ${input.key}`);
+                token = tokenRepo.create({
+                    chainId: 1, // 默认chainId
+                    address: input.key,
+                    symbol: input.symbol,
+                    name: input.name,
+                    decimals: input.decimals,
+                    assetTypeId: 1, // 默认assetType
+                    updatedAt: new Date()
+                });
+                await tokenRepo.save(token);
+                
+                // 验证是否创建成功
+                const afterCount = await tokenRepo.count();
+                if (afterCount <= beforeCount) {
+                    throw new Error(`Token creation failed for ${input.key}`);
+                }
+                this.logger.info(`Successfully created token: ${input.key}`);
+            } else {
+                this.logger.debug(`Token already exists: ${input.key}`);
+            }
+            
+            return token;
+        } catch (error) {
+            this.logger.error(`Failed to upsert token ${input.key}`, 
+                error instanceof Error ? error : new Error(String(error)));
+            throw error;
+        }
     }
 
     private async executeInTransaction(input: NormalizedTokenInput): Promise<DimToken> {

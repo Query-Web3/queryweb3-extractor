@@ -37,7 +37,13 @@ export class MonthlyStatsProcessor {
                     // 计算月统计
                     const monthlyVolume = weeklyStats.reduce((sum, stat) => sum + stat.volume, 0);
                     const monthlyTxns = weeklyStats.reduce((sum, stat) => sum + stat.txnsCount, 0);
-                    const avgPrice = weeklyStats.reduce((sum, stat) => sum + stat.priceUsd, 0) / weeklyStats.length;
+                    
+                    // 计算平均价格，处理NaN情况
+                    const avgPrice = weeklyStats.length > 0 ? 
+                        weeklyStats.reduce((sum, stat) => sum + (stat.priceUsd || 0), 0) / weeklyStats.length : 0;
+                    
+                    // 确保volumeUsd有效
+                    const safeVolumeUsd = isFinite(monthlyVolume * avgPrice) ? monthlyVolume * avgPrice : 0;
 
                     // 获取同比数据
                     const prevYearMonthStart = new Date(monthStart);
@@ -66,9 +72,9 @@ export class MonthlyStatsProcessor {
                         tokenId: token.id,
                         date: today,
                         volume: monthlyVolume,
-                        volumeUsd: monthlyVolume * avgPrice,
+                        volumeUsd: safeVolumeUsd,
                         txnsCount: monthlyTxns,
-                        priceUsd: avgPrice,
+                        priceUsd: isFinite(avgPrice) ? avgPrice : 0,
                         volumeYoy: volumeYoY,
                         txnsYoy: txnsYoY
                     };
@@ -129,12 +135,13 @@ export class MonthlyStatsProcessor {
 
             // Get token price from oracle (use default 1.0 if not available)
             const tokenPrice = await getTokenPriceFromOracle(token.address) ?? 1.0;
+            const safeTokenPrice = isFinite(tokenPrice) ? tokenPrice : 1.0;
 
             // Find token in dim_tokens table by symbol or name
             const tokenRecord = await this.repository.tokenRepo.findOne({
                 where: [
                     { symbol: token.symbol },
-                    { name: token.symbol } // Also try matching by name if symbol not found
+                    { name: token.symbol }
                 ]
             });
 
@@ -143,8 +150,6 @@ export class MonthlyStatsProcessor {
                 return false;
             }
 
-            this.logger.debug(`Found matching token record for ${token.symbol}: ID=${tokenRecord.id}`);
-
             // Get previous stats for comparisons
             const prevMonthStat = await this.repository.monthlyStatRepo.findOne({ 
                 where: { tokenId: tokenRecord.id, date: new Date(today.setMonth(today.getMonth() - 2)) } 
@@ -152,8 +157,6 @@ export class MonthlyStatsProcessor {
             const prevYearStat = await this.repository.yearlyStatRepo.findOne({ 
                 where: { tokenId: tokenRecord.id, date: new Date(today.setFullYear(today.getFullYear() - 1)) } 
             });
-
-            // 获取季度数据 (3个月前)
             const prevQuarterStat = await this.repository.monthlyStatRepo.findOne({ 
                 where: { tokenId: token.id, date: new Date(today.setMonth(today.getMonth() - 3)) } 
             });
@@ -172,43 +175,37 @@ export class MonthlyStatsProcessor {
             let volumeQoQ = 0;
             let txnsQoQ = 0;
 
-            if (!hasFullYearData) {
-                this.logger.warn(`Insufficient yearly data for ${token.symbol}, using 0% for YoY comparison`);
-            } else {
-                volumeYoY = ((monthlyVolume - prevYearStat.volume) / prevYearStat.volume * 100);
-                txnsYoY = ((monthlyTxns - prevYearStat.txnsCount) / prevYearStat.txnsCount * 100);
+            if (hasFullYearData) {
+                volumeYoY = prevYearStat.volume ? 
+                    ((monthlyVolume - prevYearStat.volume) / prevYearStat.volume * 100) : 0;
+                txnsYoY = prevYearStat.txnsCount ?
+                    ((monthlyTxns - prevYearStat.txnsCount) / prevYearStat.txnsCount * 100) : 0;
             }
 
-            if (!hasFullQuarterData) {
-                this.logger.warn(`Insufficient quarterly data for ${token.symbol}, using 0% for QoQ comparison`);
-            } else {
-                volumeQoQ = ((monthlyVolume - prevQuarterStat.volume) / prevQuarterStat.volume * 100);
-                txnsQoQ = ((monthlyTxns - prevQuarterStat.txnsCount) / prevQuarterStat.txnsCount * 100);
+            if (hasFullQuarterData) {
+                volumeQoQ = prevQuarterStat.volume ? 
+                    ((monthlyVolume - prevQuarterStat.volume) / prevQuarterStat.volume * 100) : 0;
+                txnsQoQ = prevQuarterStat.txnsCount ?
+                    ((monthlyTxns - prevQuarterStat.txnsCount) / prevQuarterStat.txnsCount * 100) : 0;
             }
 
             const monthlyStat = {
                 tokenId: tokenRecord.id,
                 date: today,
                 volume: monthlyVolume,
-                volumeUsd: monthlyVolume * tokenPrice,
+                volumeUsd: isFinite(monthlyVolume * safeTokenPrice) ? monthlyVolume * safeTokenPrice : 0,
                 txnsCount: monthlyTxns,
-                priceUsd: tokenPrice,
+                priceUsd: safeTokenPrice,
                 volumeYoy: volumeYoY,
                 txnsYoy: txnsYoY,
                 volumeQoq: volumeQoQ,
                 txnsQoq: txnsQoQ
             };
 
-            const existingMonthlyStat = await this.repository.monthlyStatRepo.findOne({
-                where: { tokenId: token.id, date: today }
-            });
-
-            // 使用upsert操作避免主键冲突
             await this.repository.monthlyStatRepo.upsert(monthlyStat, {
-                conflictPaths: ['tokenId', 'date'], // 冲突检测字段
-                skipUpdateIfNoValuesChanged: true // 无变化时不更新
+                conflictPaths: ['tokenId', 'date'],
+                skipUpdateIfNoValuesChanged: true
             });
-            this.logger.debug(`Upserted monthly stat record for ${token.symbol}`);
 
             tokenTimer.end();
             return true;
