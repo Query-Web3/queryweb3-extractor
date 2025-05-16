@@ -1,4 +1,4 @@
-import { Entity, PrimaryGeneratedColumn, Column, ManyToOne } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn } from 'typeorm';
 import { DimToken } from './DimToken';
 import { DimReturnType } from './DimReturnType';
 
@@ -7,13 +7,7 @@ export class FactYieldStat {
   @PrimaryGeneratedColumn({ type: 'bigint' })
   id: number;
 
-  @Column()
-  tokenId: number;
-
-  @Column()
-  returnTypeId: number;
-
-  @Column({ length: 42 })
+  @Column({ name: 'pool_address', length: 42 })
   poolAddress: string;
 
   @Column({ type: 'timestamp' })
@@ -31,9 +25,11 @@ export class FactYieldStat {
   @Column({ name: 'created_at', type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
   createdAt: Date;
 
-  @ManyToOne(() => DimToken, (token) => token.yieldStats)
+  @ManyToOne(() => DimToken, (token) => token.yieldStats, { createForeignKeyConstraints: false })
+  @JoinColumn({ name: 'token_id' })
   token: DimToken;
 
-  @ManyToOne(() => DimReturnType, (returnType) => returnType.yieldStats)
+  @ManyToOne(() => DimReturnType, (returnType) => returnType.yieldStats, { createForeignKeyConstraints: false })
+  @JoinColumn({ name: 'return_type_id' })
   returnType: DimReturnType;
 }

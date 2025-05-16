@@ -10,9 +10,31 @@ import { createApi, disconnectApi } from '../../common/apiConnector';
 async function getPoolAddressFromChain(tokenAddress: string): Promise<string> {
     const api = await createApi();
     try {
-        // 查询Rewards模块的poolAccounts获取poolAddress
-        const poolAccount = await api.query.rewards.poolAccounts(tokenAddress);
-        return poolAccount.toString();
+        // 处理包含特殊字符的token地址
+        const sanitizedAddress = tokenAddress.includes('-') 
+            ? tokenAddress.replace(/-/g, '') 
+            : tokenAddress;
+
+        if (api.query.rewards?.poolAccounts) {
+            const poolAccount = await api.query.rewards.poolAccounts(sanitizedAddress);
+            return poolAccount.toString();
+        }
+        
+        if (api.query.staking?.poolAccounts) {
+            const poolAccount = await api.query.staking.poolAccounts(sanitizedAddress);
+            return poolAccount.toString();
+        }
+        
+        if (api.query.system?.account) {
+            const accountInfo = await api.query.system.account(sanitizedAddress);
+            return accountInfo.toString();
+        }
+        
+        console.warn(`No valid pool account query method found, using token address as fallback`);
+        return tokenAddress;
+    } catch (error) {
+        console.error(`Failed to get pool address for ${tokenAddress}:`, error);
+        return tokenAddress;
     } finally {
         await disconnectApi(api);
     }
@@ -32,7 +54,6 @@ export async function processYieldStats() {
         const eventRepo = queryRunner.manager.getRepository(AcalaEvent);
         const statCycleRepo = queryRunner.manager.getRepository(DimStatCycle);
         
-        // Preload all necessary data
         const [tokens, returnTypes, dailyCycle] = await Promise.all([
             tokenRepo.find(),
             returnTypeRepo.find(),
@@ -42,30 +63,19 @@ export async function processYieldStats() {
         const today = new Date();
         today.setHours(0, 0, 0, 0);
 
-        // Batch fetch all reward and transfer events
         const rewardEvents = await eventRepo.find({
             where: { 
                 section: 'Rewards', 
-                method: 'Reward',
-                //data: { currencyId: () => `JSON_EXTRACT(data, '$.currencyId')` }
+                method: 'Reward'
             }
         });
         const transferEvents = await eventRepo.find({
             where: [
-                { 
-                    section: 'Tokens', 
-                    method: 'Transfer',
-                    //data: { currencyId: () => `JSON_EXTRACT(data, '$.currencyId')` }
-                },
-                { 
-                    section: 'Balances', 
-                    method: 'Transfer',
-                    //data: { currencyId: () => `JSON_EXTRACT(data, '$.currencyId')` }
-                }
+                { section: 'Tokens', method: 'Transfer' },
+                { section: 'Balances', method: 'Transfer' }
             ]
         });
 
-        // Cache pool addresses to avoid repeated chain queries
         const poolAddressCache = new Map<string, string>();
         const getCachedPoolAddress = async (tokenAddress: string) => {
             if (!poolAddressCache.has(tokenAddress)) {
@@ -74,7 +84,6 @@ export async function processYieldStats() {
             return poolAddressCache.get(tokenAddress)!;
         };
 
-        // Process tokens in parallel
         await Promise.all(tokens.map(async token => {
             const tokenRewards = rewardEvents.filter(e => {
                 try {
@@ -85,6 +94,7 @@ export async function processYieldStats() {
                     return false;
                 }
             });
+
             const tokenTransfers = transferEvents.filter(e => {
                 try {
                     const data = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
@@ -99,6 +109,7 @@ export async function processYieldStats() {
                 const data = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
                 return sum + parseFloat(data?.amount || '0');
             }, 0);
+
             const tvl = tokenTransfers.reduce((sum, e) => {
                 const data = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
                 return sum + parseFloat(data?.amount || '0');
@@ -114,65 +125,49 @@ export async function processYieldStats() {
                 console.error(`Failed to get price for ${token.address}, using default 1.0`);
             }
 
-            const safeTvl = isNaN(tvl) ? 0 : tvl;
-            const safeDailyRewards = isNaN(dailyRewards) ? 0 : dailyRewards;
-            const safeTokenPrice = isNaN(tokenPrice) ? 1.0 : tokenPrice;
+            const safeTvl = isNaN(tvl) || !isFinite(tvl) ? 0 : tvl;
+            const safeDailyRewards = isNaN(dailyRewards) || !isFinite(dailyRewards) ? 0 : dailyRewards;
+            const safeTokenPrice = isNaN(tokenPrice) || !isFinite(tokenPrice) ? 1.0 : tokenPrice;
+            const safeApy = safeTvl > 0 ? (safeDailyRewards * 365 / safeTvl * 100) : 0;
             
             const tvlUsd = safeTvl * safeTokenPrice;
-            const apy = safeTvl > 0 ? (safeDailyRewards * 365 / safeTvl * 100) : 0;
             const poolAddress = await getCachedPoolAddress(token.address);
 
-            // Batch process return types
             const statUpdates = returnTypes.map(returnType => ({
-                tokenId: token.id,
-                returnTypeId: returnType.id,
-                cycleId: dailyCycle?.id,
+                token: { id: token.id },
+                returnType: { id: returnType.id },
+                cycle: dailyCycle,
                 poolAddress,
                 date: today,
-                apy,
-                tvl,
+                apy: safeApy,
+                tvl: safeTvl,
                 tvlUsd
             }));
 
-            // Log stat updates before upsert
-            console.log(`Preparing to upsert stats for token ${token.address}:`, {
-                statUpdates: JSON.stringify(statUpdates, null, 2),
-                conflictColumns: ['tokenId', 'returnTypeId', 'date']
-            });
-
-            // Bulk upsert stats
-            const upsertResult = await yieldStatRepo.upsert(statUpdates, ['tokenId', 'returnTypeId', 'date']);
-            console.log(`Upsert result for token ${token.address}:`, upsertResult);
+            const upsertResult = await yieldStatRepo.upsert(statUpdates, ['token', 'returnType', 'date']);
             
-            // Verify data was written
             const writtenStats = await yieldStatRepo.find({
                 where: {
-                    tokenId: token.id,
+                    token: { id: token.id },
                     date: today
-                }
+                },
+                relations: ['token']
             });
             
             if (writtenStats.length === 0) {
                 console.error(`No stats written for token ${token.address} on ${today}`);
-                // Try direct insert if upsert failed
                 try {
                     await yieldStatRepo.insert(statUpdates);
-                    console.log(`Successfully inserted stats for token ${token.address}`);
                 } catch (insertError) {
                     console.error(`Failed to insert stats for token ${token.address}:`, insertError);
                 }
-            } else {
-                console.log(`Successfully wrote ${writtenStats.length} stats for token ${token.address}`);
-                console.log('Sample written stat:', writtenStats[0]);
             }
         }));
 
         await queryRunner.commitTransaction();
-        console.log('Successfully committed yield stats transaction');
     } catch (e) {
         console.error('Failed to process yield stats:', e);
         await queryRunner.rollbackTransaction();
-        console.log('Rolled back yield stats transaction');
         throw e;
     } finally {
         await queryRunner.release();
