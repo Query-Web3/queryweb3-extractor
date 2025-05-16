@@ -1,6 +1,14 @@
 import { BatchLog } from '../entities/BatchLog';
 import { initializeDataSource } from '../commands/transform/dataSource';
 
+interface Metrics {
+    totalProcessed: number;
+    successCount: number;
+    errorCount: number;
+    durations: Record<string, number>;
+    throughput: number;
+}
+
 export enum LogLevel {
     DEBUG = 'debug',
     INFO = 'info',
@@ -12,8 +20,48 @@ export class Logger {
     private static instance: Logger;
     private batchLog?: BatchLog;
     private logLevel: LogLevel = LogLevel.INFO;
+    private metrics: Metrics = {
+        totalProcessed: 0,
+        successCount: 0,
+        errorCount: 0,
+        durations: {},
+        throughput: 0
+    };
 
     private constructor() {}
+
+    public recordSuccess() {
+        this.metrics.successCount++;
+        this.metrics.totalProcessed++;
+    }
+
+    public recordError() {
+        this.metrics.errorCount++;
+        this.metrics.totalProcessed++;
+    }
+
+    public recordDuration(label: string, durationMs: number) {
+        this.metrics.durations[label] = durationMs;
+    }
+
+    public getMetrics(): Metrics {
+        return {
+            ...this.metrics,
+            throughput: this.metrics.totalProcessed > 0 
+                ? this.metrics.successCount / this.metrics.totalProcessed * 100
+                : 0
+        };
+    }
+
+    public resetMetrics() {
+        this.metrics = {
+            totalProcessed: 0,
+            successCount: 0,
+            errorCount: 0,
+            durations: {},
+            throughput: 0
+        };
+    }
 
     public static getInstance(): Logger {
         if (!Logger.instance) {

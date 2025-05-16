@@ -90,8 +90,10 @@ export async function transformData(batchLog?: BatchLog) {
                                 }
                             }
                         }
+                        logger.recordSuccess();
                     } catch (e) {
                         logger.error(`Failed to process Acala data for block #${block.number}`, e as Error);
+                        logger.recordError();
                     }
                 }
                 acalaTimer.end();
@@ -115,26 +117,28 @@ export async function transformData(batchLog?: BatchLog) {
                 .getMany();
 
             for (const extrinsic of extrinsics) {
-                try {
-                    const method = extrinsic.method;
-                    const params = extrinsic.params as any;
-                    
-                    if (method.startsWith('tokens.') && params?.currencyId) {
-                        tokenIds.add(params.currencyId);
-                    } else if (method.startsWith('dex.') && params?.path) {
-                        for (const currencyId of params.path) {
-                            tokenIds.add(currencyId);
+                    try {
+                        const method = extrinsic.method;
+                        const params = extrinsic.params as any;
+                        
+                        if (method.startsWith('tokens.') && params?.currencyId) {
+                            tokenIds.add(params.currencyId);
+                        } else if (method.startsWith('dex.') && params?.path) {
+                            for (const currencyId of params.path) {
+                                tokenIds.add(currencyId);
+                            }
+                        } else if (method.startsWith('homa.')) {
+                            tokenIds.add('ACA');
                         }
-                    } else if (method.startsWith('homa.')) {
-                        tokenIds.add('ACA');
+                        logger.recordSuccess();
+                    } catch (e) {
+                        logger.error(`Failed to process extrinsic`, e as Error, {
+                            extrinsicId: extrinsic.id,
+                            method: extrinsic.method,
+                            params: extrinsic.params
+                        });
+                        logger.recordError();
                     }
-                } catch (e) {
-                    logger.error(`Failed to process extrinsic`, e as Error, {
-                        extrinsicId: extrinsic.id,
-                        method: extrinsic.method,
-                        params: extrinsic.params
-                    });
-                }
             }
             processTimer.end();
 
@@ -162,6 +166,7 @@ export async function transformData(batchLog?: BatchLog) {
                     if (data?.currencyId) {
                         tokenIds.add(data.currencyId);
                     }
+                    logger.recordSuccess();
                 } catch (e) {
                     logger.error(`Failed to process event`, e as Error, {
                         eventId: event.id,
@@ -169,6 +174,7 @@ export async function transformData(batchLog?: BatchLog) {
                         method: event.method,
                         data: event.data
                     });
+                    logger.recordError();
                 }
             }
             eventTimer.end();
@@ -176,16 +182,31 @@ export async function transformData(batchLog?: BatchLog) {
             // Batch process all unique tokens
             if (tokenIds.size > 0) {
                 const tokenTimer = logger.time('Batch process tokens');
-            const tokenService = new TokenService(
-                new TokenRepository(),
-                new TokenValidator(),
-                new TokenFactory()
-            );
-            await Promise.all(Array.from(tokenIds).map(tokenId => 
-                tokenService.upsertToken(tokenId).catch(e => 
-                    logger.error(`Failed to process token ${tokenId}`, e as Error)
-                )
-            ));
+                const tokenService = new TokenService(
+                    new TokenRepository(),
+                    new TokenValidator(),
+                    new TokenFactory()
+                );
+                
+                const BATCH_SIZE = 100; // 每批处理100个token
+                const tokenArray = Array.from(tokenIds);
+                let processed = 0;
+                
+                while (processed < tokenArray.length) {
+                    const batch = tokenArray.slice(processed, processed + BATCH_SIZE);
+                    logger.info(`Processing tokens batch ${processed + 1}-${Math.min(processed + BATCH_SIZE, tokenArray.length)}/${tokenArray.length}`);
+                    
+                    await Promise.all(batch.map(tokenId => 
+                        tokenService.upsertToken(tokenId)
+                            .then(() => logger.recordSuccess())
+                            .catch(e => {
+                                logger.error(`Failed to process token ${tokenId}`, e as Error);
+                                logger.recordError();
+                            })
+                    ));
+                    
+                    processed += BATCH_SIZE;
+                }
                 tokenTimer.end();
             }
 
@@ -210,7 +231,14 @@ export async function transformData(batchLog?: BatchLog) {
             statsTimer.end();
             
             await queryRunner.commitTransaction();
+            const metrics = logger.getMetrics();
             logger.info(`Data transformation completed. Stats: ${tokenCount} tokens, ${blockCount} blocks processed`);
+            logger.info(`Performance metrics: 
+  - Success rate: ${metrics.throughput.toFixed(2)}%
+  - Total processed: ${metrics.totalProcessed}
+  - Success count: ${metrics.successCount}
+  - Error count: ${metrics.errorCount}
+  - Processing durations: ${JSON.stringify(metrics.durations, null, 2)}`);
         } catch (e) {
             await queryRunner.rollbackTransaction();
             logger.error('Transaction rolled back due to error', e as Error);
