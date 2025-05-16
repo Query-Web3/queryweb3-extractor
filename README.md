@@ -1,5 +1,12 @@
 # Block Chain Data Extractor
 
+[查看中文版本](README_cn.md) | [View English Version](#)
+
+---
+
+![Project Badge](https://img.shields.io/badge/Blockchain-Data-blue)
+![License](https://img.shields.io/badge/License-Apache%202.0-green)
+
 ## Table of Contents
 - [Features Overview](#features-overview)
 - [Requirements](#requirements)
@@ -23,7 +30,7 @@ A blockchain data extraction tool for retrieving and storing detailed transactio
 
 ## Requirements
 
-- Node.js 16+
+- Node.js 22.15+
 - MySQL 5.7+
 - Access to Acala node RPC
 
@@ -35,19 +42,29 @@ A blockchain data extraction tool for retrieving and storing detailed transactio
 pnpm install
 ```
 
-3. Configure database connection (edit .env file):
+3. Configure database connections (copy .env.example to .env and edit):
 ```env
-DATABASE_URL="mysql://user:password@localhost:3306/db_name"
+# Extract database
+EXTRACT_DB_HOST="127.0.0.1"
+EXTRACT_DB_PORT="3306"
+EXTRACT_DB_USER="root"
+EXTRACT_DB_PASSWORD="password"
+EXTRACT_DB_NAME="QUERYWEB3"
+
+# Transform database 
+TRANSFORM_DB_HOST="127.0.0.1"
+TRANSFORM_DB_PORT="3306"
+TRANSFORM_DB_USER="root"
+TRANSFORM_DB_PASSWORD="password"
+TRANSFORM_DB_NAME="QUERYWEB3"
 ```
 
 4. Run database migrations:
-```bash
-pnpm exec prisma migrate dev
-```
+TBD
 
 5. Build the project:
 ```bash
-ppnpm start build
+ppnpm build
 ```
 
 ## Basic Usage
@@ -77,8 +94,9 @@ For more detailed documentation, please refer to:
 - [Events Specification](doc/en/events.md)  
 - [Extract Command Details](doc/en/extract_command.md)
 - [Transform Command Details](doc/en/transform_command.md)
+- [Block Command Details](doc/en/block_command.md)
+- [Truncate Command Details](doc/en/truncate_command.md)
 - [Usage Guide](doc/en/usage.md)
-- [Chinese Documentation](doc/cn/usage.md)
 
 ## License
 

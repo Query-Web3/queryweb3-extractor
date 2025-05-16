@@ -1,5 +1,12 @@
 # Block Chain Data Extractor
 
+[View English Version](README.md) | [查看中文版本](#)
+
+---
+
+![项目徽章](https://img.shields.io/badge/区块链-数据-blue)
+![许可证](https://img.shields.io/badge/许可证-Apache%202.0-green)
+
 ## 目录
 - [功能概述](#功能概述)
 - [环境依赖](#环境依赖)
@@ -23,7 +30,7 @@
 
 ## 环境依赖
 
-- Node.js 16+
+- Node.js 22.15+
 - MySQL 5.7+
 - Acala节点RPC访问权限
 
@@ -35,19 +42,29 @@
 pnpm install
 ```
 
-3. 配置数据库连接（修改.env文件）：
+3. 配置数据库连接（复制.env.example为.env并编辑）：
 ```env
-DATABASE_URL="mysql://user:password@localhost:3306/db_name"
+# Extract数据库
+EXTRACT_DB_HOST="127.0.0.1"
+EXTRACT_DB_PORT="3306"
+EXTRACT_DB_USER="root"
+EXTRACT_DB_PASSWORD="password"
+EXTRACT_DB_NAME="QUERYWEB3"
+
+# Transform数据库
+TRANSFORM_DB_HOST="127.0.0.1"
+TRANSFORM_DB_PORT="3306"
+TRANSFORM_DB_USER="root"
+TRANSFORM_DB_PASSWORD="password"
+TRANSFORM_DB_NAME="QUERYWEB3"
 ```
 
 4. 运行数据库迁移：
-```bash
-pnpm exec prisma migrate dev
-```
+TBD
 
 5. 构建项目：
 ```bash
-ppnpm start build
+ppnpm build
 ```
 
 ## 基本使用方法
@@ -77,8 +94,9 @@ ppnpm start block
 - [事件规范](doc/cn/events.md)
 - [Extract命令详解](doc/cn/extract_command.md)
 - [Transform命令详解](doc/cn/transform_command.md)
+- [Block命令详解](doc/cn/block_command.md)
+- [Truncate命令详解](doc/cn/truncate_command.md)
 - [使用指南](doc/cn/usage.md)
-- [英文文档](doc/en/usage.md)
 
 ## 版权声明
 
