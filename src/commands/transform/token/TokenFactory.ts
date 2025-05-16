@@ -130,7 +130,14 @@ export class TokenFactory implements ITokenFactory {
     }
 
     private handlePlainAddress(input: any): NormalizedTokenInput {
-        const key = input.address || input.id;
+        let key = input.address || input.id;
+        if (typeof key === 'object') {
+            this.logger.debug('Processing object input in handlePlainAddress', {
+                originalInput: input,
+                convertedKey: JSON.stringify(key)
+            });
+            key = JSON.stringify(key);
+        }
         return {
             key,
             symbol: input.symbol || key.slice(0, 20),
@@ -152,11 +159,18 @@ export class TokenFactory implements ITokenFactory {
     }
 
     private handleDefaultInput(input: any): NormalizedTokenInput {
-        const key = String(input);
+        let key = String(input);
+        if (typeof input === 'object' && input !== null) {
+            this.logger.debug('Processing object input in handleDefaultInput', {
+                originalInput: input,
+                convertedKey: JSON.stringify(input)
+            });
+            key = JSON.stringify(input);
+        }
         return {
             key,
-            symbol: key,
-            name: key,
+            symbol: key.slice(0, 20),
+            name: key.slice(0, 100),
             type: 'Other',
             decimals: 12,
             rawData: input
