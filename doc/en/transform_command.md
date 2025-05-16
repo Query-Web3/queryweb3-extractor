@@ -17,7 +17,17 @@ graph TD
     C --> G[End]
     D --> G
     E --> G
-    F --> G
+    F --> H[Initialize data source]
+    H --> I[Query latest block]
+    I --> J[Process Acala block data]
+    J --> K[Process extrinsics]
+    K --> L[Process events]
+    L --> M[Batch process tokens]
+    M --> N[Initialize dimension tables]
+    N --> O[Cache dimensions to Redis]
+    O --> P[Process statistics]
+    P --> Q[Validate data consistency]
+    Q --> G
 ```
 
 ## Parameter Description
@@ -38,7 +48,17 @@ graph TD
    - Resume: Continue unfinished batch
    - Transform: Execute standard transformation
 
-3. **Result Handling**:
+3. **Core Transformation Flow**:
+   - Initialize data source and database connection
+   - Query latest block as reference point
+   - Process Acala block data to collect token IDs
+   - Process extrinsics and events to collect more token IDs
+   - Batch process all tokens to dimension tables
+   - Initialize and cache dimension tables (DimChain, DimAssetType etc.)
+   - Process token and yield statistics
+   - Validate data consistency
+
+4. **Result Handling**:
    - Display operation results
    - Clean up resources
 
