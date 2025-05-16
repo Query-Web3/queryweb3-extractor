@@ -12,8 +12,10 @@
 - [Requirements](#requirements)
 - [Installation](#installation)
 - [Basic Usage](#basic-usage)
-  - [Extract Command](#extract-command)
-  - [Transform Command](#transform-command)
+  - [Extract Command](doc/cn/transform_command.md)
+  - [Transform Command](doc/cn/transform_command.md)
+  - [Block Command](doc/cn/block_command.md)
+  - [Truncate Command](doc/cn/tuncate_command.md)
 - [Detailed Documentation](#detailed-documentation)
 - [License](#license)
 
@@ -64,7 +66,7 @@ TBD
 
 5. Build the project:
 ```bash
-ppnpm build
+pnpm build
 ```
 
 ## Basic Usage

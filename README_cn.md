@@ -12,8 +12,10 @@
 - [环境依赖](#环境依赖)
 - [安装](#安装)
 - [基本使用方法](#基本使用方法)
-  - [Extract命令](#extract命令)
-  - [Transform命令](#transform命令)
+  - [Extract命令](doc/cn/extract_command.md)
+  - [Transform命令](doc/cn/transform_command.md)
+  - [Block命令](doc/cn/block_command.md)
+  - [Truncate命令](doc/cn/truncate_command.md)
 - [详细文档](#详细文档)
 - [版权声明](#版权声明)
 
@@ -64,7 +66,7 @@ TBD
 
 5. 构建项目：
 ```bash
-ppnpm build
+pnpm build
 ```
 
 ## 基本使用方法
