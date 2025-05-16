@@ -15,14 +15,16 @@ const program = new Command();
 program
     .name('queryweb3-extractor')
     // Set the description of the CLI tool
-    .description('CLI for extracting and transforming blockchain data')
+    .description('CLI for extracting and transforming Acala blockchain data')
     // Set the version of the CLI tool
     .version('0.5.0')
     .option('-c, --chain <string>', 'Specify chain name (acala, hydration, bifrost, stellswap)', 'acala');
 
 registerExtractCommand(program);
 registerTransformCommand(program);
+
 registerBlockCommand(program);
+
 registerTruncateCommand(program);
 
 program.parseAsync(process.argv).catch(async (err: Error) => {
