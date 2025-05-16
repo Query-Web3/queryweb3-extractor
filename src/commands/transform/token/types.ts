@@ -11,6 +11,7 @@ export interface NormalizedTokenInput {
 
 export interface ITokenRepository {
     upsertToken(input: NormalizedTokenInput): Promise<DimToken>;
+    getAllTokens(): Promise<DimToken[]>;
 }
 
 export interface ITokenValidator {

@@ -190,4 +190,14 @@ export class TokenRepository implements ITokenRepository {
         };
         return descriptions[typeName] || typeName;
     }
+
+    public async getAllTokens(): Promise<DimToken[]> {
+        const dataSource = await initializeDataSource();
+        const tokenRepo = dataSource.getRepository(DimToken);
+        return tokenRepo.find({
+            order: {
+                symbol: 'ASC'
+            }
+        });
+    }
 }

@@ -33,9 +33,13 @@ export class TokenService {
             const normalizedInput = this.factory.normalizeInput(currencyId);
             
             // 2. 检查Redis缓存
-            const cachedToken = await this.redisClient.get(`token:${normalizedInput.key}`);
-            if (cachedToken) {
-                return JSON.parse(cachedToken);
+            const cachedTable = await this.redisClient.get('dim_tokens');
+            if (cachedTable) {
+                const tokens = JSON.parse(cachedTable);
+                const cachedToken = tokens.find((t: any) => t.address === normalizedInput.key);
+                if (cachedToken) {
+                    return cachedToken;
+                }
             }
 
             // 3. 验证输入
@@ -44,10 +48,11 @@ export class TokenService {
             // 4. 创建/更新token
             const token = await this.repository.upsertToken(normalizedInput);
 
-            // 5. 更新Redis缓存
+            // 5. 更新整个表缓存
+            const allTokens = await this.repository.getAllTokens();
             await this.redisClient.set(
-                `token:${normalizedInput.key}`, 
-                JSON.stringify(token),
+                'dim_tokens',
+                JSON.stringify(allTokens),
                 { EX: 3600 } // 1小时过期
             );
             
