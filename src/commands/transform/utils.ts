@@ -1,12 +1,13 @@
 import axios from 'axios';
+import { getRedisClient } from '../../common/redis';
 import { Logger, LogLevel } from '../../utils/logger';
 import WebSocket, { MessageEvent } from 'ws';
 import { ApiPromise, WsProvider } from '@polkadot/api';
 import { options } from '@acala-network/api';
 
-// Price cache
-const priceCache = new Map<string, {price: number, timestamp: number}>();
-const CACHE_TTL = 5 * 60 * 1000; // 5 minutes cache
+// Redis price cache key
+const PRICE_CACHE_KEY = 'token:price:cache';
+const CACHE_TTL = 5 * 60; // 5 minutes cache in seconds
 
 // Binance WebSocket client
 let binanceWS: WebSocket | null = null;
@@ -95,12 +96,27 @@ export async function getTokenPriceFromOracle(tokenAddress: string): Promise<num
     
     const priceTimer = logger.time('Get token price');
     
-    // Check cache first
-    const cached = priceCache.get(tokenAddress);
-    if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
-        logger.debug(`Using cached price for ${tokenAddress}: ${cached.price}`);
-        priceTimer.end();
-        return cached.price;
+    // Check Redis cache first
+    try {
+        const redis = await getRedisClient();
+        const cachedPrice = await redis.sendCommand(['HGET', PRICE_CACHE_KEY, tokenAddress]);
+        if (cachedPrice && typeof cachedPrice === 'string') {
+            try {
+                const parsed = JSON.parse(cachedPrice);
+                if (parsed && typeof parsed.price === 'number' && typeof parsed.timestamp === 'number') {
+                    const { price, timestamp } = parsed;
+                    if (Date.now() - timestamp < CACHE_TTL * 1000) {
+                        logger.debug(`Using Redis cached price for ${tokenAddress}: ${price}`);
+                        priceTimer.end();
+                        return price;
+                    }
+                }
+            } catch (error) {
+                logger.warn('Failed to parse cached price', error);
+            }
+        }
+    } catch (error) {
+        logger.warn('Failed to check Redis price cache', error);
     }
 
     // Try Acala Swap first
@@ -108,7 +124,19 @@ export async function getTokenPriceFromOracle(tokenAddress: string): Promise<num
     if (acalaPrice) {
         logger.debug(`Using Acala Swap price: ${acalaPrice}`);
         console.log(`[ACA Price] Current price: $${acalaPrice.toFixed(8)} (from Acala Swap)`);
-        priceCache.set(tokenAddress, {price: acalaPrice, timestamp: Date.now()});
+        // Update Redis cache
+        try {
+            const redis = await getRedisClient();
+            await redis.sendCommand([
+                'HSET', 
+                PRICE_CACHE_KEY, 
+                tokenAddress,
+                JSON.stringify({price: acalaPrice, timestamp: Date.now()})
+            ]);
+            await redis.sendCommand(['EXPIRE', PRICE_CACHE_KEY, CACHE_TTL.toString()]);
+        } catch (error) {
+            logger.warn('Failed to update Redis price cache', error);
+        }
         priceTimer.end();
         return acalaPrice;
     }
@@ -126,7 +154,19 @@ export async function getTokenPriceFromOracle(tokenAddress: string): Promise<num
     if (binancePrice && Date.now() - lastBinanceUpdate < 30000) { // 30s freshness
         logger.debug(`Using Binance WS price: ${binancePrice}`);
         console.log(`[ACA Price] Current price: $${binancePrice.toFixed(4)}`);
-        priceCache.set(tokenAddress, {price: binancePrice, timestamp: Date.now()});
+        // Update Redis cache
+        try {
+            const redis = await getRedisClient();
+            await redis.sendCommand([
+                'HSET',
+                PRICE_CACHE_KEY,
+                tokenAddress,
+                JSON.stringify({price: binancePrice, timestamp: Date.now()})
+            ]);
+            await redis.sendCommand(['EXPIRE', PRICE_CACHE_KEY, CACHE_TTL.toString()]);
+        } catch (error) {
+            logger.warn('Failed to update Redis price cache', error);
+        }
         priceTimer.end();
         return binancePrice;
     }
@@ -165,7 +205,19 @@ export async function getTokenPriceFromOracle(tokenAddress: string): Promise<num
                     const priceNum = parseFloat(price);
                     logger.debug(`Got price from ${source.name}: ${priceNum}`);
                     console.log(`[ACA Price] Current price: $${priceNum.toFixed(4)} (from ${source.name})`);
-                    priceCache.set(tokenAddress, {price: priceNum, timestamp: Date.now()});
+                    // Update Redis cache
+                    try {
+                    const redis = await getRedisClient();
+                    await redis.sendCommand([
+                        'HSET',
+                        PRICE_CACHE_KEY,
+                        tokenAddress,
+                        JSON.stringify({price: priceNum, timestamp: Date.now()})
+                    ]);
+                    await redis.sendCommand(['EXPIRE', PRICE_CACHE_KEY, CACHE_TTL.toString()]);
+                    } catch (error) {
+                        logger.warn('Failed to update Redis price cache', error);
+                    }
                     priceTimer.end();
                     return priceNum;
                 }

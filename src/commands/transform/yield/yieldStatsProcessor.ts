@@ -62,6 +62,17 @@ export async function processYieldStats() {
         ]);
         
         const today = new Date();
+        
+        // Get ACA price once for all tokens
+        let acaPrice = 1.0;
+        try {
+            const price = await getTokenPriceFromOracle('ACA');
+            if (price !== null && !isNaN(price)) {
+                acaPrice = price;
+            }
+        } catch (e) {
+            console.error('Failed to get ACA price, using default 1.0');
+        }
         today.setHours(0, 0, 0, 0);
 
         const rewardEvents = await eventRepo.find({
@@ -116,19 +127,9 @@ export async function processYieldStats() {
                 return sum + parseFloat(data?.amount || '0');
             }, 0);
 
-            let tokenPrice = 1.0;
-            try {
-                const price = await getTokenPriceFromOracle(token.address);
-                if (price !== null && !isNaN(price)) {
-                    tokenPrice = price;
-                }
-            } catch (e) {
-                console.error(`Failed to get price for ${token.address}, using default 1.0`);
-            }
-
             const safeTvl = isNaN(tvl) || !isFinite(tvl) ? 0 : tvl;
             const safeDailyRewards = isNaN(dailyRewards) || !isFinite(dailyRewards) ? 0 : dailyRewards;
-            const safeTokenPrice = isNaN(tokenPrice) || !isFinite(tokenPrice) ? 1.0 : tokenPrice;
+            const safeTokenPrice = acaPrice; // Use the pre-fetched ACA price
             const safeApy = safeTvl > 0 ? (safeDailyRewards * 365 / safeTvl * 100) : 0;
             
             const tvlUsd = safeTvl * safeTokenPrice;
