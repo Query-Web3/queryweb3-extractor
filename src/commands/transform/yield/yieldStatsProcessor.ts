@@ -116,25 +116,14 @@ export async function processYieldStats() {
                 return sum + parseFloat(data?.amount || '0');
             }, 0);
 
-            // 从Redis获取缓存价格
-            const redis = await getRedisClient();
             let tokenPrice = 1.0;
             try {
-                const cachedPrice = await redis.get(`token:price:${token.address}`);
-                if (cachedPrice) {
-                    tokenPrice = parseFloat(cachedPrice);
-                } else {
-                    const price = await getTokenPriceFromOracle(token.address);
-                    if (price !== null && !isNaN(price)) {
-                        tokenPrice = price;
-                        // 缓存价格，有效期1小时
-                        await redis.setex(`token:price:${token.address}`, 3600, price.toString());
-                    }
+                const price = await getTokenPriceFromOracle(token.address);
+                if (price !== null && !isNaN(price)) {
+                    tokenPrice = price;
                 }
             } catch (e) {
                 console.error(`Failed to get price for ${token.address}, using default 1.0`);
-            } finally {
-                await redis.quit();
             }
 
             const safeTvl = isNaN(tvl) || !isFinite(tvl) ? 0 : tvl;
