@@ -3,12 +3,13 @@ import { DimToken } from '../../../entities/DimToken';
 import { DimReturnType } from '../../../entities/DimReturnType';
 import { DimStatCycle } from '../../../entities/DimStatCycle';
 import { AcalaEvent } from '../../../entities/acala/AcalaEvent';
-import { initializeDataSource } from '../dataSource';
-import { getTokenPriceFromOracle } from '../utils';
-import { createApi, disconnectApi } from '../../common/apiConnector';
+import { initializeDataSource } from '../../../commands/transform/dataSource';
+import { getTokenPriceFromOracle } from '../../../commands/transform/utils';
+import { getSharedApiConnection as getSharedApi, releaseSharedApiConnection as releaseSharedApi } from '../../../common/apiConnector';
+import { getRedisClient } from '../../../common/redis';
 
 async function getPoolAddressFromChain(tokenAddress: string): Promise<string> {
-    const api = await createApi();
+    const api = await getSharedApi();
     try {
         // 处理包含特殊字符的token地址
         const sanitizedAddress = tokenAddress.includes('-') 
@@ -36,7 +37,7 @@ async function getPoolAddressFromChain(tokenAddress: string): Promise<string> {
         console.error(`Failed to get pool address for ${tokenAddress}:`, error);
         return tokenAddress;
     } finally {
-        await disconnectApi(api);
+        await releaseSharedApi(api);
     }
 }
 
@@ -115,14 +116,25 @@ export async function processYieldStats() {
                 return sum + parseFloat(data?.amount || '0');
             }, 0);
 
+            // 从Redis获取缓存价格
+            const redis = await getRedisClient();
             let tokenPrice = 1.0;
             try {
-                const price = await getTokenPriceFromOracle(token.address);
-                if (price !== null && !isNaN(price)) {
-                    tokenPrice = price;
+                const cachedPrice = await redis.get(`token:price:${token.address}`);
+                if (cachedPrice) {
+                    tokenPrice = parseFloat(cachedPrice);
+                } else {
+                    const price = await getTokenPriceFromOracle(token.address);
+                    if (price !== null && !isNaN(price)) {
+                        tokenPrice = price;
+                        // 缓存价格，有效期1小时
+                        await redis.setex(`token:price:${token.address}`, 3600, price.toString());
+                    }
                 }
             } catch (e) {
                 console.error(`Failed to get price for ${token.address}, using default 1.0`);
+            } finally {
+                await redis.quit();
             }
 
             const safeTvl = isNaN(tvl) || !isFinite(tvl) ? 0 : tvl;

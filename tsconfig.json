@@ -4,6 +4,7 @@
     "module": "commonjs",
     "outDir": "dist",
     "rootDir": "src",
+    "baseUrl": "src",
     "strict": true,
     "strictPropertyInitialization": false,
     "esModuleInterop": true,
