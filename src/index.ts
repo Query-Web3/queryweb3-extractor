@@ -5,6 +5,7 @@ import { registerExtractCommand } from './commands/extract/register';
 import { registerTransformCommand } from './commands/transform/register';
 import { registerBlockCommand } from './commands/block/register';
 import { registerTruncateCommand } from './commands/truncate/main';
+import { registerMigrationCommand } from './commands/migration/register';
 import { extractDataSource } from './datasources/extractDataSource';
 import { transformDataSource } from './datasources/transformDataSource';
 
@@ -24,6 +25,7 @@ registerExtractCommand(program);
 registerTransformCommand(program);
 registerBlockCommand(program);
 registerTruncateCommand(program);
+registerMigrationCommand(program);
 
 program.parseAsync(process.argv).catch(async (err: Error) => {
     console.error(err);

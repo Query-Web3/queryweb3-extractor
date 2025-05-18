@@ -1,14 +1,35 @@
 # 数据库结构文档
 
-## 整体架构
+## 数据库架构
 
-数据库采用星型模型设计，包含：
-- **原始数据表**：存储从各链提取的原始数据
-- **维度表**：存储业务维度信息
-- **事实表**：存储业务指标数据
+系统使用三个独立的数据库：
+
+### 1. 批处理数据库 (QUERYWEB3_BATCH)
+- 存储批处理任务执行日志
+- 主要表：
+  - batch_log: 记录批处理任务状态和执行日志
+
+### 2. 提取数据库 (QUERYWEB3_EXTRACT)
+- 存储从各链提取的原始数据
+- 按链分表存储：
+  - Acala链: acala_block, acala_event, acala_extrinsic
+  - Bifrost链: Bifrost_site_table, Bifrost_staking_table
+  - Stellaswap: pool_data
+  - Hydration: hydration_data
+
+### 3. 转换数据库 (QUERYWEB3)
+- 存储转换后的维度模型数据
+- 包含：
+  - 维度表: dim_asset_types, dim_chains等
+  - 事实表: fact_token_daily_stats等
+
+## 详细表结构
 
 ```mermaid
 erDiagram
+    batch_log ||--o{ acala_block : "记录"
+    batch_log ||--o{ Bifrost_site_table : "记录"
+    
     dim_tokens ||--o{ fact_token_daily_stats : "1:N"
     dim_tokens ||--o{ fact_token_weekly_stats : "1:N"
     dim_tokens ||--o{ fact_token_monthly_stats : "1:N" 
@@ -20,77 +41,47 @@ erDiagram
     dim_stat_cycles ||--o{ fact_token_daily_stats : "1:N"
 ```
 
-## 原始数据表
+## 配置说明
 
-### Acala链
-| 表名 | 说明 |
-|------|------|
-| acala_block | 存储区块基本信息 |
-| acala_event | 存储链上事件 |
-| acala_extrinsic | 存储交易信息 |
-| acala_batchlog | 记录批处理日志 |
+在.env文件中需要配置三个数据库的连接信息：
 
-### Bifrost链
-| 表名 | 说明 |
-|------|------|
-| Bifrost_site_table | 存储站点TVL/APY等数据 |
-| Bifrost_staking_table | 存储质押数据 |
-| Bifrost_batchID_table | 记录批处理ID |
+```env
+# 批处理数据库
+BATCH_DB_HOST="127.0.0.1"
+BATCH_DB_PORT="3306"
+BATCH_DB_USER="root"
+BATCH_DB_PASSWORD="password"
+BATCH_DB_NAME="QUERYWEB3_BATCH"
 
-### Stellaswap
-| 表名 | 说明 |
-|------|------|
-| pool_data | 存储流动性池数据 |
+# 提取数据库
+EXTRACT_DB_HOST="127.0.0.1"
+EXTRACT_DB_PORT="3306"
+EXTRACT_DB_USER="root"
+EXTRACT_DB_PASSWORD="password"
+EXTRACT_DB_NAME="QUERYWEB3_EXTRACT"
 
-### Hydration
-| 表名 | 说明 |
-|------|------|
-| hydration_data | 存储收益数据 |
+# 转换数据库
+TRANSFORM_DB_HOST="127.0.0.1"
+TRANSFORM_DB_PORT="3306"
+TRANSFORM_DB_USER="root"
+TRANSFORM_DB_PASSWORD="password"
+TRANSFORM_DB_NAME="QUERYWEB3"
+```
 
-## 维度表
+## 初始化说明
 
-| 表名 | 说明 |
-|------|------|
-| dim_asset_types | 资产类型(DeFi/GameFi/NFT) |
-| dim_chains | 区块链网络信息 |
-| dim_return_types | 收益类型(Staking/Farming) |
-| dim_stat_cycles | 统计周期(daily/weekly等) |
-| dim_tokens | 代币基础信息 |
+使用migration命令初始化数据库：
 
-## 事实表
+```bash
+# 初始化所有数据库
+pnpm start migration --all
 
-| 表名 | 说明 |
-|------|------|
-| fact_token_daily_stats | 代币每日统计 |
-| fact_token_weekly_stats | 代币每周统计 |
-| fact_token_monthly_stats | 代币每月统计 |
-| fact_token_yearly_stats | 代币每年统计 |
-| fact_yield_stats | 收益率数据 |
+# 或单独初始化某个数据库
+pnpm start migration --batch
+pnpm start migration --extract
+pnpm start migration --transform
+```
 
-## 与ETL流程的关系
+## 表详细说明
 
-### Extract命令
-1. 从各链提取原始数据
-2. 写入对应链的原始数据表
-3. 记录处理日志到batchlog表
-
-### Transform命令
-1. 从原始数据表读取数据
-2. 关联维度表进行数据转换
-3. 计算结果写入事实表
-4. 生成不同周期的统计指标
-
-## 典型查询示例
-
-```sql
--- 查询某代币最近30天的交易数据
-SELECT * FROM fact_token_daily_stats 
-WHERE token_id = 123 AND date >= DATE_SUB(NOW(), INTERVAL 30 DAY);
-
--- 查询各链TVL排名
-SELECT c.name, SUM(f.tvl_usd) as total_tvl
-FROM fact_yield_stats f
-JOIN dim_tokens t ON f.token_id = t.id
-JOIN dim_chains c ON t.chain_id = c.id
-GROUP BY c.name
-ORDER BY total_tvl DESC;
+(保留原有的表详细说明内容...)

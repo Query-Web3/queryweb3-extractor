@@ -1,14 +1,35 @@
 # Database Structure Documentation
 
-## Overall Architecture
+## Database Architecture
 
-The database uses a star schema design, containing:
-- **Raw data tables**: Store raw data extracted from chains
-- **Dimension tables**: Store business dimensions
-- **Fact tables**: Store business metrics
+The system uses three independent databases:
+
+### 1. Batch Database (QUERYWEB3_BATCH)
+- Stores batch task execution logs
+- Main tables:
+  - batch_log: Records batch task status and execution logs
+
+### 2. Extract Database (QUERYWEB3_EXTRACT)
+- Stores raw data extracted from chains
+- Tables organized by chain:
+  - Acala: acala_block, acala_event, acala_extrinsic
+  - Bifrost: Bifrost_site_table, Bifrost_staking_table
+  - Stellaswap: pool_data
+  - Hydration: hydration_data
+
+### 3. Transform Database (QUERYWEB3)
+- Stores dimensional model data
+- Contains:
+  - Dimension tables: dim_asset_types, dim_chains etc.
+  - Fact tables: fact_token_daily_stats etc.
+
+## Schema Diagram
 
 ```mermaid
 erDiagram
+    batch_log ||--o{ acala_block : "logs"
+    batch_log ||--o{ Bifrost_site_table : "logs"
+    
     dim_tokens ||--o{ fact_token_daily_stats : "1:N"
     dim_tokens ||--o{ fact_token_weekly_stats : "1:N"
     dim_tokens ||--o{ fact_token_monthly_stats : "1:N" 
@@ -20,77 +41,47 @@ erDiagram
     dim_stat_cycles ||--o{ fact_token_daily_stats : "1:N"
 ```
 
-## Raw Data Tables
+## Configuration
 
-### Acala Chain
-| Table | Description |
-|-------|-------------|
-| acala_block | Basic block information |
-| acala_event | On-chain events |
-| acala_extrinsic | Transaction data |
-| acala_batchlog | Batch processing logs |
+Configure three database connections in .env file:
 
-### Bifrost Chain
-| Table | Description |
-|-------|-------------|
-| Bifrost_site_table | Site TVL/APY data |
-| Bifrost_staking_table | Staking data |
-| Bifrost_batchID_table | Batch IDs |
+```env
+# Batch Database
+BATCH_DB_HOST="127.0.0.1"
+BATCH_DB_PORT="3306"
+BATCH_DB_USER="root"
+BATCH_DB_PASSWORD="password"
+BATCH_DB_NAME="QUERYWEB3_BATCH"
 
-### Stellaswap
-| Table | Description |
-|-------|-------------|
-| pool_data | Liquidity pool data |
+# Extract Database
+EXTRACT_DB_HOST="127.0.0.1"
+EXTRACT_DB_PORT="3306"
+EXTRACT_DB_USER="root"
+EXTRACT_DB_PASSWORD="password"
+EXTRACT_DB_NAME="QUERYWEB3_EXTRACT"
 
-### Hydration
-| Table | Description |
-|-------|-------------|
-| hydration_data | Yield data |
+# Transform Database
+TRANSFORM_DB_HOST="127.0.0.1"
+TRANSFORM_DB_PORT="3306"
+TRANSFORM_DB_USER="root"
+TRANSFORM_DB_PASSWORD="password"
+TRANSFORM_DB_NAME="QUERYWEB3"
+```
 
-## Dimension Tables
+## Initialization
 
-| Table | Description |
-|-------|-------------|
-| dim_asset_types | Asset types (DeFi/GameFi/NFT) |
-| dim_chains | Blockchain networks |
-| dim_return_types | Return types (Staking/Farming) |
-| dim_stat_cycles | Stat cycles (daily/weekly etc.) |
-| dim_tokens | Token information |
+Initialize databases using migration command:
 
-## Fact Tables
+```bash
+# Initialize all databases
+pnpm start migration --all
 
-| Table | Description |
-|-------|-------------|
-| fact_token_daily_stats | Daily token stats |
-| fact_token_weekly_stats | Weekly token stats |
-| fact_token_monthly_stats | Monthly token stats |
-| fact_token_yearly_stats | Yearly token stats |
-| fact_yield_stats | Yield data |
+# Or initialize specific database
+pnpm start migration --batch
+pnpm start migration --extract
+pnpm start migration --transform
+```
 
-## Relationship with ETL Process
+## Table Details
 
-### Extract Command
-1. Extracts raw data from chains
-2. Writes to corresponding raw data tables
-3. Logs processing to batchlog tables
-
-### Transform Command
-1. Reads from raw data tables
-2. Joins with dimension tables for transformation
-3. Writes results to fact tables
-4. Generates periodic stats
-
-## Sample Queries
-
-```sql
--- Query last 30 days token stats
-SELECT * FROM fact_token_daily_stats 
-WHERE token_id = 123 AND date >= DATE_SUB(NOW(), INTERVAL 30 DAY);
-
--- Query chain TVL ranking
-SELECT c.name, SUM(f.tvl_usd) as total_tvl
-FROM fact_yield_stats f
-JOIN dim_tokens t ON f.token_id = t.id
-JOIN dim_chains c ON t.chain_id = c.id
-GROUP BY c.name
-ORDER BY total_tvl DESC;
+(Keep existing table details...)
