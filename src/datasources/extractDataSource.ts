@@ -2,8 +2,6 @@ import { DataSource } from 'typeorm';
 import { AcalaBlock } from '../entities/acala/AcalaBlock';
 import { AcalaExtrinsic } from '../entities/acala/AcalaExtrinsic';
 import { AcalaEvent } from '../entities/acala/AcalaEvent';
-import { BatchLog } from '../entities/BatchLog';
-
 export const extractDataSource = new DataSource({
   type: 'mysql',
   host: process.env.EXTRACT_DB_HOST,
@@ -11,7 +9,7 @@ export const extractDataSource = new DataSource({
   username: process.env.EXTRACT_DB_USER,
   password: process.env.EXTRACT_DB_PASSWORD,
   database: process.env.EXTRACT_DB_NAME,
-  entities: [AcalaBlock, AcalaExtrinsic, AcalaEvent, BatchLog],
+  entities: [AcalaBlock, AcalaExtrinsic, AcalaEvent],
   synchronize: false,
   logging: process.env.NODE_ENV === 'development',
 });

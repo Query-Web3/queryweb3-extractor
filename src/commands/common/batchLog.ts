@@ -1,11 +1,11 @@
-import { extractDataSource } from '../../datasources/extractDataSource';
+import { batchDataSource } from '../../datasources/batchDataSource';
 import { BatchLog, BatchType, BatchStatus } from '../../entities/BatchLog';
 
 export async function showLastBatchLog(type: BatchType) {
-    if (!extractDataSource.isInitialized) {
-        await extractDataSource.initialize();
+    if (!batchDataSource.isInitialized) {
+        await batchDataSource.initialize();
     }
-    const batchLogRepo = extractDataSource.getRepository(BatchLog);
+    const batchLogRepo = batchDataSource.getRepository(BatchLog);
     const lastLog = await batchLogRepo.findOne({
         where: { type },
         order: { startTime: 'DESC' }
@@ -27,10 +27,10 @@ export async function showLastBatchLog(type: BatchType) {
 }
 
 export async function pauseBatch(batchlogId: number) {
-    if (!extractDataSource.isInitialized) {
-        await extractDataSource.initialize();
+    if (!batchDataSource.isInitialized) {
+        await batchDataSource.initialize();
     }
-    const batchLogRepo = extractDataSource.getRepository(BatchLog);
+    const batchLogRepo = batchDataSource.getRepository(BatchLog);
     const batchLog = await batchLogRepo.findOne({
         where: { 
             id: batchlogId,
@@ -50,10 +50,10 @@ export async function pauseBatch(batchlogId: number) {
 }
 
 export async function resumeBatch(type: BatchType) {
-    if (!extractDataSource.isInitialized) {
-        await extractDataSource.initialize();
+    if (!batchDataSource.isInitialized) {
+        await batchDataSource.initialize();
     }
-    const batchLogRepo = extractDataSource.getRepository(BatchLog);
+    const batchLogRepo = batchDataSource.getRepository(BatchLog);
     const unfinishedLog = await batchLogRepo.findOne({
         where: { 
             type,

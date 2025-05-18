@@ -9,7 +9,6 @@ import { FactTokenMonthlyStat } from '../entities/FactTokenMonthlyStat';
 import { FactTokenWeeklyStat } from '../entities/FactTokenWeeklyStat';
 import { FactTokenYearlyStat } from '../entities/FactTokenYearlyStat';
 import { FactYieldStat } from '../entities/FactYieldStat';
-import { BatchLog } from '../entities/BatchLog';
 import { AcalaExtrinsic } from '../entities/acala/AcalaExtrinsic';
 import { AcalaBlock } from '../entities/acala/AcalaBlock';
 import { AcalaEvent } from '../entities/acala/AcalaEvent';
@@ -32,7 +31,6 @@ export const transformDataSource = new DataSource({
     FactTokenWeeklyStat,
     FactTokenYearlyStat,
     FactYieldStat,
-    BatchLog,
     AcalaExtrinsic,
     AcalaBlock,
     AcalaEvent
