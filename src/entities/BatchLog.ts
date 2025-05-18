@@ -24,7 +24,7 @@ export enum BatchType {
   TRANSFORM = 2
 }
 
-@Entity({ name: 'acala_batchlog' })
+@Entity({ name: 'batch_log' })
 export class BatchLog {
   @PrimaryGeneratedColumn()
   id: number;
