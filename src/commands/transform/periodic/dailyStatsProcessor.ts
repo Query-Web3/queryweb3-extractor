@@ -22,6 +22,9 @@ export class DailyStatsProcessor {
             today.setHours(0, 0, 0, 0);
             
             // 1. 按天聚合所有token的区块数据
+            // 添加调试日志
+            this.logger.debug('Querying daily events for date:', today.toISOString());
+            
             const dailyEvents = await this.repository.eventRepo.createQueryBuilder('event')
                 .leftJoinAndSelect('event.block', 'block')
                 .where(`(
@@ -36,6 +39,16 @@ export class DailyStatsProcessor {
                     end: new Date(today.getTime() + 24 * 60 * 60 * 1000)
                 })
                 .getMany();
+
+            // 记录查询结果
+            this.logger.debug(`Found ${dailyEvents.length} daily events`);
+            if (dailyEvents.length > 0) {
+                this.logger.debug('Sample event:', {
+                    section: dailyEvents[0].section,
+                    method: dailyEvents[0].method,
+                    data: dailyEvents[0].data
+                });
+            }
 
             // 2. 按token分组计算日统计
             const tokenStats = new Map<string, {volume: number, txns: number}>();
@@ -119,6 +132,13 @@ export class DailyStatsProcessor {
                 txnsCount: safeTxns,
                 priceUsd: safeTokenPrice
             };
+
+            // 记录即将写入的数据
+            this.logger.debug('Preparing to save daily stats:', {
+                tokenId: token.id,
+                tokenSymbol: token.symbol,
+                statData: JSON.stringify(statData, null, 2)
+            });
 
             // 使用repository的dailyStatRepo进行数据操作
             const result = await this.repository.dailyStatRepo.upsert(statData, {

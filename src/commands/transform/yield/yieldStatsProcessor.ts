@@ -82,18 +82,29 @@ export async function processYieldStats() {
         }
         today.setHours(0, 0, 0, 0);
 
-        const rewardEvents = await eventRepo.find({
-            where: { 
-                section: 'Rewards', 
-                method: 'Reward'
-            }
-        });
-        const transferEvents = await eventRepo.find({
-            where: [
-                { section: 'Tokens', method: 'Transfer' },
-                { section: 'Balances', method: 'Transfer' }
-            ]
-        });
+        logger.debug('Querying reward and transfer events');
+        const [rewardEvents, transferEvents] = await Promise.all([
+            eventRepo.find({
+                where: { 
+                    section: 'Rewards', 
+                    method: 'Reward'
+                }
+            }),
+            eventRepo.find({
+                where: [
+                    { section: 'Tokens', method: 'Transfer' },
+                    { section: 'Balances', method: 'Transfer' }
+                ]
+            })
+        ]);
+        
+        logger.debug(`Found ${rewardEvents.length} reward events and ${transferEvents.length} transfer events`);
+        if (rewardEvents.length > 0) {
+            logger.debug('Sample reward event:', {
+                id: rewardEvents[0].id,
+                data: rewardEvents[0].data
+            });
+        }
 
         const poolAddressCache = new Map<string, string>();
         const getCachedPoolAddress = async (tokenAddress: string) => {
@@ -104,13 +115,22 @@ export async function processYieldStats() {
         };
 
         await Promise.all(tokens.map(async token => {
+            logger.debug(`Processing token ${token.address} (${token.symbol})`);
+            
             const tokenRewards = rewardEvents.filter(e => {
                 try {
                     const data = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
-                    return data?.currencyId === token.address;
+                    const matches = data?.currencyId === token.address;
+                    if (matches) {
+                        logger.debug('Matching reward event:', {
+                            eventId: e.id,
+                            data: data
+                        });
+                    }
+                    return matches;
                 } catch (e: unknown) {
                     const err = e instanceof Error ? e : new Error(String(e));
-                    Logger.getInstance().error(`Failed to parse reward event data for token ${token.address}:`, err);
+                    logger.error(`Failed to parse reward event data for token ${token.address}:`, err);
                     return false;
                 }
             });
@@ -118,13 +138,22 @@ export async function processYieldStats() {
             const tokenTransfers = transferEvents.filter(e => {
                 try {
                     const data = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
-                    return data?.currencyId === token.address;
+                    const matches = data?.currencyId === token.address;
+                    if (matches) {
+                        logger.debug('Matching transfer event:', {
+                            eventId: e.id,
+                            data: data
+                        });
+                    }
+                    return matches;
                 } catch (e: unknown) {
                     const err = e instanceof Error ? e : new Error(String(e));
-                    Logger.getInstance().error(`Failed to parse transfer event data for token ${token.address}:`, err);
+                    logger.error(`Failed to parse transfer event data for token ${token.address}:`, err);
                     return false;
                 }
             });
+
+            logger.debug(`Found ${tokenRewards.length} rewards and ${tokenTransfers.length} transfers for token ${token.address}`);
 
             const dailyRewards = tokenRewards.reduce((sum, e) => {
                 const data = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
@@ -160,7 +189,17 @@ export async function processYieldStats() {
                 tvlUsd
             }));
 
+            logger.debug('Preparing to upsert yield stats:', {
+                token: token.address,
+                statCount: statUpdates.length,
+                sampleStat: statUpdates[0]
+            });
+
             const upsertResult = await yieldStatRepo.upsert(statUpdates, ['token', 'returnType', 'date']);
+            logger.debug('Upsert result:', {
+                affected: upsertResult.raw?.affectedRows,
+                identifiers: upsertResult.identifiers
+            });
             
             const writtenStats = await yieldStatRepo.find({
                 where: {
