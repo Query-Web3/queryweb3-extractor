@@ -40,6 +40,7 @@ export class YearlyStatsProcessor {
                     // 计算平均价格，处理NaN情况
                     const avgPrice = monthlyStats.length > 0 ? 
                         monthlyStats.reduce((sum, stat) => sum + (stat.priceUsd || 0), 0) / monthlyStats.length : 0;
+                    const safeAvgPrice = isFinite(avgPrice) ? avgPrice : 0;
 
                     // 确保volumeUsd有效
                     const safeVolumeUsd = isFinite(yearlyVolume * avgPrice) ? yearlyVolume * avgPrice : 0;
@@ -73,7 +74,7 @@ export class YearlyStatsProcessor {
                         volume: yearlyVolume,
                         volumeUsd: safeVolumeUsd,
                         txnsCount: yearlyTxns,
-                        priceUsd: avgPrice,
+                        priceUsd: safeAvgPrice,
                         volumeYoy: volumeYoY,
                         txnsYoy: txnsYoY
                     };
@@ -136,6 +137,7 @@ export class YearlyStatsProcessor {
 
             // Get token price from oracle (use default 1.0 if not available)
             const tokenPrice = await getTokenPriceFromOracle(token.address) ?? 1.0;
+            const safeTokenPrice = isFinite(tokenPrice) ? tokenPrice : 1.0;
 
             // Find token in dim_tokens table by symbol or name
             const tokenRecord = await this.repository.tokenRepo.findOne({
@@ -183,9 +185,9 @@ export class YearlyStatsProcessor {
                 tokenId: tokenRecord.id,
                 date: today,
                 volume: yearlyVolume,
-                volumeUsd: yearlyVolume * tokenPrice,
+                volumeUsd: yearlyVolume * safeTokenPrice,
                 txnsCount: yearlyTxns,
-                priceUsd: tokenPrice,
+                priceUsd: safeTokenPrice,
                 volumeYoy: volumeYoY,
                 txnsYoy: txnsYoY
             };

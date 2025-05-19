@@ -5,10 +5,12 @@ import { DimStatCycle } from '../../../entities/DimStatCycle';
 import { AcalaEvent } from '../../../entities/acala/AcalaEvent';
 import { initializeDataSource } from '../../../commands/transform/dataSource';
 import { getTokenPriceFromOracle } from '../../../commands/transform/utils';
+import { Logger, LogLevel } from '../../../utils/logger';
 import { getSharedApiConnection as getSharedApi, releaseSharedApiConnection as releaseSharedApi } from '../../../common/apiConnector';
 import { getRedisClient } from '../../../common/redis';
 
 async function getPoolAddressFromChain(tokenAddress: string): Promise<string> {
+    const logger = Logger.getInstance();
     const api = await getSharedApi();
     try {
         // 处理包含特殊字符的token地址
@@ -31,10 +33,11 @@ async function getPoolAddressFromChain(tokenAddress: string): Promise<string> {
             return accountInfo.toString();
         }
         
-        console.warn(`No valid pool account query method found, using token address as fallback`);
+        logger.warn(`No valid pool account query method found, using token address as fallback`);
         return tokenAddress;
-    } catch (error) {
-        console.error(`Failed to get pool address for ${tokenAddress}:`, error);
+    } catch (error: unknown) {
+        const err = error instanceof Error ? error : new Error(String(error));
+        logger.error(`Failed to get pool address for ${tokenAddress}:`, err);
         return tokenAddress;
     } finally {
         await releaseSharedApi(api);
@@ -42,13 +45,16 @@ async function getPoolAddressFromChain(tokenAddress: string): Promise<string> {
 }
 
 export async function processYieldStats() {
+    const logger = Logger.getInstance();
+    logger.setLogLevel(process.env.LOG_LEVEL as LogLevel || LogLevel.INFO);
+    
     const dataSource = await initializeDataSource();
     const queryRunner = dataSource.createQueryRunner();
     await queryRunner.connect();
     await queryRunner.startTransaction();
 
     try {
-        console.log('Starting yield stats processing transaction');
+        logger.info('Starting yield stats processing transaction');
         const tokenRepo = queryRunner.manager.getRepository(DimToken);
         const returnTypeRepo = queryRunner.manager.getRepository(DimReturnType);
         const yieldStatRepo = queryRunner.manager.getRepository(FactYieldStat);
@@ -70,8 +76,9 @@ export async function processYieldStats() {
             if (price !== null && !isNaN(price)) {
                 acaPrice = price;
             }
-        } catch (e) {
-            console.error('Failed to get ACA price, using default 1.0');
+        } catch (e: unknown) {
+            const err = e instanceof Error ? e : new Error(String(e));
+            Logger.getInstance().error('Failed to get ACA price, using default 1.0', err);
         }
         today.setHours(0, 0, 0, 0);
 
@@ -101,8 +108,9 @@ export async function processYieldStats() {
                 try {
                     const data = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
                     return data?.currencyId === token.address;
-                } catch (e) {
-                    console.error(`Failed to parse reward event data for token ${token.address}:`, e);
+                } catch (e: unknown) {
+                    const err = e instanceof Error ? e : new Error(String(e));
+                    Logger.getInstance().error(`Failed to parse reward event data for token ${token.address}:`, err);
                     return false;
                 }
             });
@@ -111,8 +119,9 @@ export async function processYieldStats() {
                 try {
                     const data = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
                     return data?.currencyId === token.address;
-                } catch (e) {
-                    console.error(`Failed to parse transfer event data for token ${token.address}:`, e);
+                } catch (e: unknown) {
+                    const err = e instanceof Error ? e : new Error(String(e));
+                    Logger.getInstance().error(`Failed to parse transfer event data for token ${token.address}:`, err);
                     return false;
                 }
             });
@@ -127,10 +136,15 @@ export async function processYieldStats() {
                 return sum + parseFloat(data?.amount || '0');
             }, 0);
 
-            const safeTvl = isNaN(tvl) || !isFinite(tvl) ? 0 : tvl;
+            const safeTvl = isNaN(tvl) || !isFinite(tvl) || tvl <= 0 ? 0 : tvl;
             const safeDailyRewards = isNaN(dailyRewards) || !isFinite(dailyRewards) ? 0 : dailyRewards;
             const safeTokenPrice = acaPrice; // Use the pre-fetched ACA price
             const safeApy = safeTvl > 0 ? (safeDailyRewards * 365 / safeTvl * 100) : 0;
+            
+            if (safeTvl === 0) {
+                logger.warn(`TVL is zero for token ${token.address}, skipping APY calculation`);
+                return; // Skip this token
+            }
             
             const tvlUsd = safeTvl * safeTokenPrice;
             const poolAddress = await getCachedPoolAddress(token.address);
@@ -157,18 +171,22 @@ export async function processYieldStats() {
             });
             
             if (writtenStats.length === 0) {
-                console.error(`No stats written for token ${token.address} on ${today}`);
+                logger.error(`No stats written for token ${token.address} on ${today}`);
                 try {
                     await yieldStatRepo.insert(statUpdates);
-                } catch (insertError) {
-                    console.error(`Failed to insert stats for token ${token.address}:`, insertError);
+                    logger.info(`Successfully inserted stats for token ${token.address} after upsert failed`);
+                } catch (insertError: unknown) {
+                    const err = insertError instanceof Error ? insertError : new Error(String(insertError));
+                    logger.error(`Failed to insert stats for token ${token.address}:`, err);
                 }
             }
         }));
 
         await queryRunner.commitTransaction();
-    } catch (e) {
-        console.error('Failed to process yield stats:', e);
+        logger.info('Successfully committed yield stats transaction');
+    } catch (e: unknown) {
+        const err = e instanceof Error ? e : new Error(String(e));
+        logger.error('Failed to process yield stats:', err);
         await queryRunner.rollbackTransaction();
         throw e;
     } finally {

@@ -35,7 +35,14 @@ export class MonthlyStatsProcessor {
                         .getMany();
 
                     // 计算月统计
-                    const monthlyVolume = weeklyStats.reduce((sum, stat) => sum + stat.volume, 0);
+                    const monthlyVolume = weeklyStats.reduce((sum, stat) => {
+                        let volume = 0;
+                        if (stat.volume !== null && stat.volume !== undefined) {
+                            const volumeStr = String(stat.volume);
+                            volume = parseFloat(volumeStr.replace(/[^\d.-]/g, ''));
+                        }
+                        return sum + (isFinite(volume) ? volume : 0);
+                    }, 0);
                     const monthlyTxns = weeklyStats.reduce((sum, stat) => sum + stat.txnsCount, 0);
                     
                     // 计算平均价格，处理NaN情况
@@ -67,17 +74,26 @@ export class MonthlyStatsProcessor {
                     const txnsYoY = prevYearStats?.txns_count ?
                         ((monthlyTxns - prevYearStats.txns_count) / prevYearStats.txns_count * 100) : 0;
 
+                    // 验证volume值
+                    const safeMonthlyVolume = isFinite(monthlyVolume) ? 
+                        Math.min(monthlyVolume, Number.MAX_SAFE_INTEGER) : 0;
+                    
                     // 保存月统计
                     const monthlyStat = {
                         tokenId: token.id,
                         date: today,
-                        volume: monthlyVolume,
+                        volume: safeMonthlyVolume,
                         volumeUsd: safeVolumeUsd,
                         txnsCount: monthlyTxns,
                         priceUsd: isFinite(avgPrice) ? avgPrice : 0,
                         volumeYoy: volumeYoY,
                         txnsYoy: txnsYoY
                     };
+
+                    // 记录验证日志
+                    if (monthlyVolume !== safeMonthlyVolume) {
+                        this.logger.warn(`Volume value ${monthlyVolume} was truncated to ${safeMonthlyVolume} for token ${token.symbol}`);
+                    }
 
                     await this.repository.monthlyStatRepo.upsert(monthlyStat, {
                         conflictPaths: ['tokenId', 'date'],
@@ -124,11 +140,15 @@ export class MonthlyStatsProcessor {
             const monthlyVolume = monthlyEvents.reduce((sum, event) => {
                 let amount = 0;
                 if (event.section === 'Dex' && event.method === 'Swap') {
-                    amount = parseFloat(event.data.amountIn || '0') + parseFloat(event.data.amountOut || '0');
-                } else if (event.data.amount) {
-                    amount = parseFloat(event.data.amount);
+                    const amountIn = event.data?.amountIn ? 
+                        parseFloat(String(event.data.amountIn).replace(/[^\d.-]/g, '')) : 0;
+                    const amountOut = event.data?.amountOut ? 
+                        parseFloat(String(event.data.amountOut).replace(/[^\d.-]/g, '')) : 0;
+                    amount = (isFinite(amountIn) ? amountIn : 0) + (isFinite(amountOut) ? amountOut : 0);
+                } else if (event.data?.amount) {
+                    amount = parseFloat(String(event.data.amount).replace(/[^\d.-]/g, ''));
                 }
-                return sum + amount;
+                return sum + (isFinite(amount) ? amount : 0);
             }, 0);
 
             const monthlyTxns = monthlyEvents.length;
@@ -189,11 +209,15 @@ export class MonthlyStatsProcessor {
                     ((monthlyTxns - prevQuarterStat.txnsCount) / prevQuarterStat.txnsCount * 100) : 0;
             }
 
+            // 验证volume值
+            const safeMonthlyVolume = isFinite(monthlyVolume) ? 
+                Math.min(monthlyVolume, Number.MAX_SAFE_INTEGER) : 0;
+            
             const monthlyStat = {
                 tokenId: tokenRecord.id,
                 date: today,
-                volume: monthlyVolume,
-                volumeUsd: isFinite(monthlyVolume * safeTokenPrice) ? monthlyVolume * safeTokenPrice : 0,
+                volume: safeMonthlyVolume,
+                volumeUsd: isFinite(safeMonthlyVolume * safeTokenPrice) ? safeMonthlyVolume * safeTokenPrice : 0,
                 txnsCount: monthlyTxns,
                 priceUsd: safeTokenPrice,
                 volumeYoy: volumeYoY,
@@ -201,6 +225,11 @@ export class MonthlyStatsProcessor {
                 volumeQoq: volumeQoQ,
                 txnsQoq: txnsQoQ
             };
+
+            // 记录验证日志
+            if (monthlyVolume !== safeMonthlyVolume) {
+                this.logger.warn(`Volume value ${monthlyVolume} was truncated to ${safeMonthlyVolume} for token ${token.symbol}`);
+            }
 
             await this.repository.monthlyStatRepo.upsert(monthlyStat, {
                 conflictPaths: ['tokenId', 'date'],
