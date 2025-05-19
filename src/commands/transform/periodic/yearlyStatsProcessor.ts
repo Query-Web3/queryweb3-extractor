@@ -35,7 +35,14 @@ export class YearlyStatsProcessor {
                         .getMany();
 
                     // 计算年统计
-                    const yearlyVolume = monthlyStats.reduce((sum, stat) => sum + stat.volume, 0);
+                    const yearlyVolume = monthlyStats.reduce((sum, stat) => {
+                        let volume = 0;
+                        if (stat.volume !== null && stat.volume !== undefined) {
+                            const volumeStr = String(stat.volume);
+                            volume = parseFloat(volumeStr.replace(/[^\d.-]/g, ''));
+                        }
+                        return sum + (isFinite(volume) ? volume : 0);
+                    }, 0);
                     const yearlyTxns = monthlyStats.reduce((sum, stat) => sum + stat.txnsCount, 0);
                     // 计算平均价格，处理NaN情况
                     const avgPrice = monthlyStats.length > 0 ? 
@@ -126,11 +133,15 @@ export class YearlyStatsProcessor {
             const yearlyVolume = yearlyEvents.reduce((sum, event) => {
                 let amount = 0;
                 if (event.section === 'Dex' && event.method === 'Swap') {
-                    amount = parseFloat(event.data.amountIn || '0') + parseFloat(event.data.amountOut || '0');
-                } else if (event.data.amount) {
-                    amount = parseFloat(event.data.amount);
+                    const amountIn = event.data?.amountIn ? 
+                        parseFloat(String(event.data.amountIn).replace(/[^\d.-]/g, '')) : 0;
+                    const amountOut = event.data?.amountOut ? 
+                        parseFloat(String(event.data.amountOut).replace(/[^\d.-]/g, '')) : 0;
+                    amount = (isFinite(amountIn) ? amountIn : 0) + (isFinite(amountOut) ? amountOut : 0);
+                } else if (event.data?.amount) {
+                    amount = parseFloat(String(event.data.amount).replace(/[^\d.-]/g, ''));
                 }
-                return sum + amount;
+                return sum + (isFinite(amount) ? amount : 0);
             }, 0);
 
             const yearlyTxns = yearlyEvents.length;
@@ -184,7 +195,7 @@ export class YearlyStatsProcessor {
             const yearlyStat = {
                 tokenId: tokenRecord.id,
                 date: today,
-                volume: yearlyVolume,
+                volume: isFinite(yearlyVolume) ? yearlyVolume : 0,
                 volumeUsd: yearlyVolume * safeTokenPrice,
                 txnsCount: yearlyTxns,
                 priceUsd: safeTokenPrice,
