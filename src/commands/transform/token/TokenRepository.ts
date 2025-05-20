@@ -39,7 +39,6 @@ export class TokenRepository implements ITokenRepository {
                     name: input.name,
                     decimals: input.decimals,
                     assetTypeId: 1, // 默认assetType
-                    totalSupply: input.rawData?.totalSupply?.toString() || null,
                     updatedAt: new Date()
                 });
                 await tokenRepo.save(token);
@@ -211,6 +210,14 @@ export class TokenRepository implements ITokenRepository {
             } catch (e) {
                 this.logger.error('Failed to process currencyId function', e instanceof Error ? e : new Error(String(e)));
                 rawData.currencyId = null;
+            }
+        }
+
+        // 处理ForeignAsset类型
+        if (rawData.type === 'ForeignAsset') {
+            rawData.type = 'ForeignAsset';
+            if (rawData.currencyId) {
+                rawData.currencyId = rawData.currencyId.toString().replace('ForeignAsset-', '');
             }
         }
 
