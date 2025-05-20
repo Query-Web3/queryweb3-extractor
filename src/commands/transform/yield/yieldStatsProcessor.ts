@@ -107,7 +107,7 @@ export class YieldStatsProcessor {
       }
       
       // 2. Get locked ratio from staking contract
-      const lockedRatio = await this.getLockedRatio(token.contractAddress);
+      const lockedRatio = await this.getLockedRatio(token.address);
       if (lockedRatio <= 0 || lockedRatio > 1) {
         throw new Error(`Invalid locked ratio: ${lockedRatio}`);
       }

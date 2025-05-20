@@ -147,6 +147,16 @@ export class TokenRepository implements ITokenRepository {
                 chainId: tokenData.chain_id,
                 address: tokenData.address
             },
+            select: [
+                'id',
+                'chainId',
+                'address',
+                'symbol',
+                'name',
+                'decimals',
+                'assetTypeId',
+                'updatedAt'
+            ],
             lock: { 
                 mode: 'pessimistic_write',
                 onLocked: 'nowait' // 不等待锁，直接失败
@@ -236,6 +246,16 @@ export class TokenRepository implements ITokenRepository {
         const dataSource = await initializeDataSource();
         const tokenRepo = dataSource.getRepository(DimToken);
         return tokenRepo.find({
+            select: [
+                'id',
+                'chainId',
+                'address',
+                'symbol',
+                'name',
+                'decimals',
+                'assetTypeId',
+                'updatedAt'
+            ],
             order: {
                 symbol: 'ASC'
             }

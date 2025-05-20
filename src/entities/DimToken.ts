@@ -27,15 +27,6 @@ export class DimToken {
   @Column()
   decimals: number;
 
-  @Column({ name: 'contract_address', length: 42, nullable: true })
-  contractAddress: string;
-
-  @Column({ name: 'total_supply', type: 'decimal', precision: 36, scale: 18, nullable: true })
-  totalSupply?: number;
-
-  @Column({ name: 'price_usd', type: 'decimal', precision: 36, scale: 18, nullable: true })
-  priceUsd?: number;
-
   @Column({ name: 'asset_type_id' })
   assetTypeId: number; // 与SQL表结构一致
 
