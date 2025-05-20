@@ -1,6 +1,7 @@
 import { FactYieldStat } from '../../../entities/FactYieldStat';
 import { Logger } from '../../../utils/logger';
 import { DimToken } from '../../../entities/DimToken';
+import { DimReturnType } from '../../../entities/DimReturnType';
 import { DataSource } from 'typeorm';
 import { ApiConnectorFactory } from '../../common/ApiConnectorFactory';
 
@@ -40,16 +41,174 @@ export class YieldStatsProcessor {
       let totalSupply: bigint;
       try {
         if (token.chain.name === 'Acala') {
-          const result = await api.query.tokens.totalIssuance(token.address);
-          totalSupply = BigInt(result.toString());
+          // Handle native ACA token differently
+          if (token.address === 'ACA') {
+            const result = await api.query.balances.totalIssuance();
+            totalSupply = BigInt(result.toString());
+          } else {
+            const result = await api.query.tokens.totalIssuance(token.address);
+            totalSupply = BigInt(result.toString());
+          }
         } else if (token.chain.name === 'Bifrost') {
-          const result = await api.query.tokens.totalIssuance(token.address);
-          totalSupply = BigInt(result.toString());
+          // Handle native BNC token differently
+          if (token.address === 'BNC') {
+            const result = await api.query.balances.totalIssuance();
+            totalSupply = BigInt(result.toString());
+          } else {
+            const result = await api.query.tokens.totalIssuance(token.address);
+            totalSupply = BigInt(result.toString());
+          }
         } else if (token.address.startsWith('ForeignAsset-')) {
           // Handle ForeignAsset type tokens
-          const assetId = token.address.split('-')[1];
-          const result = await api.query.tokens.totalIssuance({ ForeignAsset: assetId });
-          totalSupply = BigInt(result.toString());
+          try {
+            const assetId = token.address.split('-')[1];
+            this.logger.debug(`Querying ForeignAsset supply for asset ID ${assetId}`);
+            
+            // Try direct query with proper type mapping
+            let result;
+            try {
+              // Get the chain's metadata to check available types
+              const metadata = api.runtimeMetadata;
+              const chainTypes = metadata.asLatest.lookup.types.toArray();
+              
+              // Check if ForeignAsset type exists
+              const hasForeignAsset = chainTypes.some(t => 
+                t.type.def.isComposite && 
+                t.type.def.asComposite.fields.some(f => 
+                  f.typeName?.toString().includes('ForeignAsset')
+                )
+              );
+
+              if (!hasForeignAsset) {
+                this.logger.warn(`ForeignAsset type not found in runtime metadata`);
+                return 1000000;
+              }
+              
+              // Find the correct type definition for ForeignAsset
+              const foreignAssetType = chainTypes.find(t => {
+                if (!t.type.def.isComposite) return false;
+                
+                const fields = t.type.def.asComposite.fields;
+                return fields.some(f => {
+                  try {
+                    const typeName = f.typeName?.toString() || '';
+                    return typeName.includes('ForeignAsset');
+                  } catch {
+                    return false;
+                  }
+                });
+              });
+
+              if (!foreignAssetType) {
+                this.logger.warn(`ForeignAsset type not found in chain metadata, using default value`);
+                return 1000000;
+              }
+
+              // Try to determine the correct format for ForeignAsset
+              let foreignAssetFormat = 'u128'; // default
+              try {
+              const typeDef = foreignAssetType.type.def.asComposite.fields[0];
+              if (typeDef.type) {
+                try {
+                  foreignAssetFormat = String(typeDef.type);
+                } catch {
+                  foreignAssetFormat = 'u128';
+                  this.logger.debug('Using default ForeignAsset format');
+                }
+              } else {
+                foreignAssetFormat = 'u128';
+                this.logger.debug('No type definition found, using default format');
+              }
+              } catch (e) {
+                this.logger.debug(`Could not determine ForeignAsset format, using default`);
+              }
+
+              // Register the correct type
+              api.registry.register({
+                ForeignAsset: foreignAssetFormat,
+                Lookup53: {
+                  _enum: {
+                    Token: 'Text',
+                    DexShare: '(Text,Text)',
+                    Erc20: 'H160',
+                    StableAssetPoolToken: 'u32',
+                    LiquidCrowdloan: 'u32',
+                    ForeignAsset: foreignAssetFormat
+                  }
+                }
+              });
+
+              // Try querying with proper type format
+              let result;
+              try {
+                // First try with numeric ID if format supports it
+                if (foreignAssetFormat === 'u128' || foreignAssetFormat === 'u32') {
+                  const numericId = Number(assetId);
+                  if (!isNaN(numericId)) {
+                    const assetKey = api.createType('Lookup53', { ForeignAsset: numericId });
+                    result = await api.query.tokens.totalIssuance(assetKey);
+                  }
+                }
+
+                // If still no result, try with string ID
+                if (!result) {
+                  const assetKey = api.createType('Lookup53', { ForeignAsset: assetId });
+                  result = await api.query.tokens.totalIssuance(assetKey);
+                }
+
+                // Final fallback to raw query
+                if (!result) {
+                  result = await api.query.tokens.totalIssuance(assetId);
+                }
+              } catch (error) {
+                const errorMsg = error instanceof Error ? error.message : String(error);
+              this.logger.error(`Failed to query ForeignAsset ${assetId}: ${errorMsg}`);
+                return 1000000;
+              }
+
+              if (!result) {
+                this.logger.warn(`All query attempts failed for ForeignAsset ${assetId}, using default value`);
+                return 1000000;
+              }
+            } catch (error) {
+              const errorMsg = error instanceof Error ? error.message : String(error);
+              this.logger.error(`ForeignAsset query failed for asset ${assetId}: ${errorMsg}`);
+              this.logger.debug(`API Version: ${api.runtimeVersion.toHuman()}`);
+              return 1000000; // Return default supply value
+            }
+            
+            if (!result) {
+              throw new Error('No result from ForeignAsset supply query');
+            }
+            
+            const supplyString = result ? String(result) : '0';
+            totalSupply = BigInt(supplyString);
+            this.logger.debug(`Got ForeignAsset supply for asset ID ${assetId}: ${supplyString}`);
+          } catch (error) {
+            this.logger.warn(`Failed to get supply for ForeignAsset token ${token.address}`, error as Error);
+            return 1000000; // Return default supply value
+          }
+        } else if (token.address.startsWith('Token-')) {
+          // Handle Token- prefixed assets (like Token-DOT)
+          try {
+            const tokenName = token.address.split('-')[1];
+            this.logger.debug(`Querying token supply for ${tokenName}`);
+            
+            // Try different token query formats
+            const result = await api.query.tokens.totalIssuance({ Token: tokenName }) || 
+                          await api.query.tokens.totalIssuance(tokenName) ||
+                          await api.query.assets.account(tokenName);
+            
+            if (!result) {
+              throw new Error('No result from token supply query');
+            }
+            
+            totalSupply = BigInt(result.toString());
+            this.logger.debug(`Got token supply for ${tokenName}: ${totalSupply}`);
+          } catch (error) {
+            this.logger.warn(`Failed to get supply for Token- prefixed token ${token.address}`, error as Error);
+            return 1000000; // Return default supply value
+          }
         } else {
           // Default to using ERC20 balanceOf method
           const result = await api.query.assets.account(token.address, { owner: token.address });
@@ -94,6 +253,24 @@ export class YieldStatsProcessor {
       yieldStat.token = token;
       yieldStat.date = new Date();
       yieldStat.poolAddress = token.address; // Use token address as pool address
+      // Get default return type from database with proper typing
+      const returnTypeRepo = this.dataSource.getRepository<DimReturnType>('DimReturnType');
+      const returnType = await returnTypeRepo.findOne({
+        where: { id: 1 }, // Default return type ID
+        relations: ['yieldStats']
+      });
+      
+      if (!returnType) {
+        throw new Error('Default return type not found in database');
+      }
+      
+      // Ensure all required fields are present
+      if (!returnType.name || !returnType.createdAt) {
+        returnType.name = 'Default';
+        returnType.createdAt = new Date();
+      }
+      
+      yieldStat.returnType = returnType;
       
       // Step 1: Calculate APY (Annual Percentage Yield)
       const apyData = await this.calculateAPY(token);
