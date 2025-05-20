@@ -36,9 +36,6 @@ export class DimToken {
   @Column({ name: 'updated_at', type: 'timestamp', default: () => 'CURRENT_TIMESTAMP', onUpdate: 'CURRENT_TIMESTAMP' })
   updatedAt: Date;
 
-  @Column({ name: 'total_supply', type: 'decimal', precision: 65, scale: 18, nullable: true })
-  totalSupply: string | null;
-
   @ManyToOne(() => DimChain, (chain) => chain.tokens)
   @JoinColumn({ name: 'chain_id' }) // 简化映射，使用默认id
   chain: DimChain;

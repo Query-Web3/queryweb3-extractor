@@ -17,11 +17,22 @@ export class YieldStatsProcessor {
         relations: ['chain']
       });
 
-      if (!token || !token.chain) {
-        throw new Error(`Token ${tokenId} or its chain not found`);
+      this.logger.debug(`Token ${tokenId} query result:`, token ? {
+        id: token.id,
+        address: token.address,
+        chain: token.chain ? {
+          id: token.chain.id,
+          name: token.chain.name
+        } : null
+      } : null);
+
+      if (!token) {
+        throw new Error(`Token ${tokenId} not found`);
       }
 
-      const apiConnector = ApiConnectorFactory.getConnector(token.chain.name.toLowerCase());
+      // 默认使用Acala链作为fallback
+      const chainName = token.chain?.name || 'Acala';
+      const apiConnector = ApiConnectorFactory.getConnector(chainName.toLowerCase());
       const api = await apiConnector.createApiConnection();
       
       // 根据不同的链使用不同的方法获取总供应量
@@ -127,7 +138,8 @@ export class YieldStatsProcessor {
       };
       
       // Age factor
-      const tokenAgeDays = (new Date().getTime() - token.createdAt.getTime()) / (1000 * 3600 * 24);
+      const createdAt = token.createdAt instanceof Date ? token.createdAt : new Date(token.createdAt);
+      const tokenAgeDays = (new Date().getTime() - createdAt.getTime()) / (1000 * 3600 * 24);
       riskFactors.age = tokenAgeDays < 180 ? 0.8 : tokenAgeDays < 365 ? 0.9 : 1.0;
       
       // Liquidity factor (simplified - would normally query DEX pools)
