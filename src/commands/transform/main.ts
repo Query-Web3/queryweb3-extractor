@@ -11,8 +11,10 @@ import { TokenRepository } from './token/TokenRepository';
 import { TokenValidator } from './token/TokenValidator';
 import { TokenFactory } from './token/TokenFactory';
 import { DimensionInitializer } from './token/DimensionInitializer';
-import { processTokenStats } from './token/tokenStatsProcessor';
-import { processYieldStats } from './yield/yieldStatsProcessor';
+import { DailyStatsProcessor } from './periodic/dailyStatsProcessor';
+import { TokenStatsRepository } from './token/tokenStatsRepository';
+import { YieldStatsProcessor } from './yield/yieldStatsProcessor';
+import { DataSource } from 'typeorm';
 import { v4 as uuidv4 } from 'uuid';
 import { Logger, LogLevel } from '../../utils/logger';
 
@@ -179,9 +181,9 @@ export async function transformData(batchLog?: BatchLog) {
             }
             eventTimer.end();
 
-            // Batch process all unique tokens
+            // Unified processing of tokens and stats
             if (tokenIds.size > 0) {
-                const tokenTimer = logger.time('Batch process tokens');
+                const processTimer = logger.time('Process tokens and stats');
                 const tokenService = new TokenService(
                     new TokenRepository(),
                     new TokenValidator(),
@@ -190,29 +192,25 @@ export async function transformData(batchLog?: BatchLog) {
                 
                 const tokenArray = Array.from(tokenIds);
                 logger.info(`Found ${tokenArray.length} tokens to process`);
-                
-                // 处理前检查数据库现有token
-                const existingTokens = await dataSource.getRepository(DimToken).find();
-                logger.info(`Found ${existingTokens.length} existing tokens in database`);
-                
-                let insertedCount = 0;
-                let updatedCount = 0;
-                
+
+                // Initialize dimensions first
+                const dimensionInitializer = new DimensionInitializer();
+                await dimensionInitializer.initialize();
+
+                // Process each token with stats
                 for (const tokenId of tokenArray) {
                     try {
-                        const beforeCount = await dataSource.getRepository(DimToken).count();
-                        
+                        // Upsert token to dim table
                         const token = await tokenService.upsertToken(tokenId);
+                        logger.debug(`Processed token: ${tokenId}`);
+
+                        // Process token stats to fact tables
+                        const tokenStatsRepo = new TokenStatsRepository(dataSource);
+                        const dailyStatsProcessor = new DailyStatsProcessor(tokenStatsRepo, logger);
+                        await dailyStatsProcessor.processToken(token);
                         
-                        const afterCount = await dataSource.getRepository(DimToken).count();
-                        
-                        if (afterCount > beforeCount) {
-                            insertedCount++;
-                            logger.info(`Inserted new token: ${tokenId}`);
-                        } else {
-                            updatedCount++;
-                            logger.debug(`Updated existing token: ${tokenId}`);
-                        }
+                        const yieldStatsProcessor = new YieldStatsProcessor(dataSource, logger);
+                        await yieldStatsProcessor.processToken(token);
                         
                         logger.recordSuccess();
                     } catch (e) {
@@ -220,11 +218,19 @@ export async function transformData(batchLog?: BatchLog) {
                         logger.recordError();
                     }
                 }
+
+                // Validate data consistency
+                const tokenCount = await dataSource.getRepository(DimToken).count();
+                const blockCount = await blockRepo.count();
                 
-                logger.info(`Token processing completed. Inserted: ${insertedCount}, Updated: ${updatedCount}`);
-                tokenTimer.end();
-                
-                // 强制刷新Redis缓存
+                if (tokenCount === 0) {
+                    logger.warn('No tokens found in DimToken table');
+                }
+                if (blockCount === 0) {
+                    logger.warn('No blocks found in acala_block table');
+                }
+
+                // Update Redis cache
                 try {
                     const allTokens = await dataSource.getRepository(DimToken).find();
                     await tokenService['redisClient'].set(
@@ -236,31 +242,15 @@ export async function transformData(batchLog?: BatchLog) {
                 } catch (e) {
                     logger.error('Failed to update Redis cache', e as Error);
                 }
-            }
 
-            // Validate data consistency
-            const validateTimer = logger.time('Validate data');
-            const tokenCount = await dataSource.getRepository(DimToken).count();
-            const blockCount = await blockRepo.count();
-            
-            if (tokenCount === 0) {
-                logger.warn('No tokens found in DimToken table');
+                processTimer.end();
             }
-            if (blockCount === 0) {
-                logger.warn('No blocks found in acala_block table');
-            }
-            validateTimer.end();
-
-            const statsTimer = logger.time('Process stats');
-            const dimensionInitializer = new DimensionInitializer();
-            await dimensionInitializer.initialize();
-            await processTokenStats();
-            await processYieldStats();
-            statsTimer.end();
             
             await queryRunner.commitTransaction();
             const metrics = logger.getMetrics();
-            logger.info(`Data transformation completed. Stats: ${tokenCount} tokens, ${blockCount} blocks processed`);
+            const finalTokenCount = await dataSource.getRepository(DimToken).count();
+            const finalBlockCount = await blockRepo.count();
+            logger.info(`Data transformation completed. Stats: ${finalTokenCount} tokens, ${finalBlockCount} blocks processed`);
             logger.info(`Performance metrics: 
   - Success rate: ${metrics.throughput.toFixed(2)}%
   - Total processed: ${metrics.totalProcessed}

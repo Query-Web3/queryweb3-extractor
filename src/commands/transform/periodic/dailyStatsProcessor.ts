@@ -141,22 +141,43 @@ export class DailyStatsProcessor {
             });
 
             // 使用repository的dailyStatRepo进行数据操作
+            this.logger.debug(`Attempting to upsert daily stats for token ${token.symbol}`);
             const result = await this.repository.dailyStatRepo.upsert(statData, {
                 conflictPaths: ['tokenId', 'date'],
                 skipUpdateIfNoValuesChanged: true
             });
 
+            this.logger.debug('Upsert result:', {
+                raw: result.raw,
+                identifiers: result.identifiers,
+                generatedMaps: result.generatedMaps
+            });
+
             if (!result.identifiers?.length) {
-                throw new Error(`Failed to upsert daily stats for token ${token.symbol}`);
+                throw new Error(`Failed to upsert daily stats for token ${token.symbol} - no identifiers returned`);
             }
 
             // 验证数据写入
+            this.logger.debug(`Verifying written stats for token ${token.symbol}`);
             const writtenStat = await this.repository.dailyStatRepo.findOne({
                 where: {
                     tokenId: token.id,
                     date: date
                 }
             });
+
+            if (!writtenStat) {
+                this.logger.error('Written stat verification failed - no record found');
+                // 尝试直接插入
+                try {
+                    this.logger.warn('Attempting direct insert as fallback');
+                    await this.repository.dailyStatRepo.insert(statData);
+                    this.logger.info('Direct insert succeeded');
+                } catch (insertError) {
+                    this.logger.error('Direct insert also failed', insertError as Error);
+                    throw new Error(`Failed to insert daily stats for token ${token.symbol}`);
+                }
+            }
             
             if (!writtenStat) {
                 throw new Error(`Failed to verify written stats for token ${token.symbol}`);
