@@ -39,6 +39,7 @@ export class TokenRepository implements ITokenRepository {
                     name: input.name,
                     decimals: input.decimals,
                     assetTypeId: 1, // 默认assetType
+                    totalSupply: input.rawData?.totalSupply?.toString() || null,
                     updatedAt: new Date()
                 });
                 await tokenRepo.save(token);
@@ -174,15 +175,16 @@ export class TokenRepository implements ITokenRepository {
                 updatedAt: tokenData.updated_at
             }));
         } else {
-            await repo.update(token.id, {
-                chainId: tokenData.chain_id,
-                address: tokenData.address,
-                symbol: tokenData.symbol,
-                name: tokenData.name,
-                decimals: tokenData.decimals,
-                assetTypeId: tokenData.asset_type_id,
-                updatedAt: tokenData.updated_at
-            });
+                await repo.update(token.id, {
+                    chainId: tokenData.chain_id,
+                    address: tokenData.address,
+                    symbol: tokenData.symbol,
+                    name: tokenData.name,
+                    decimals: tokenData.decimals,
+                    assetTypeId: tokenData.asset_type_id,
+                    totalSupply: tokenData.total_supply || null,
+                    updatedAt: tokenData.updated_at
+                });
             token = await repo.findOneBy({ id: token.id });
         }
 
