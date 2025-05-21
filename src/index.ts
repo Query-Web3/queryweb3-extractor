@@ -18,7 +18,7 @@ program
     // Set the description of the CLI tool
     .description('CLI for extracting and transforming blockchain data')
     // Set the version of the CLI tool
-    .version('0.5.0')
+    .version('0.6.0')
     .option('-c, --chain <string>', 'Specify chain name (acala, hydration, bifrost, stellswap)', 'acala');
 
 registerExtractCommand(program);

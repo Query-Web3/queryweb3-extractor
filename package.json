@@ -1,6 +1,6 @@
 {
   "name": "queryweb3-extractor",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "从Acala网络获取链数据并存入MySQL数据库",
   "main": "dist/index.min.js",
   "scripts": {
