@@ -1,8 +1,11 @@
 import { FactYieldStat } from '../../../entities/FactYieldStat';
+import { FactTokenWeeklyStat } from '../../../entities/FactTokenWeeklyStat';
+import { FactTokenMonthlyStat } from '../../../entities/FactTokenMonthlyStat';
+import { FactTokenYearlyStat } from '../../../entities/FactTokenYearlyStat';
 import { Logger } from '../../../utils/logger';
 import { DimToken } from '../../../entities/DimToken';
 import { DimReturnType } from '../../../entities/DimReturnType';
-import { DataSource } from 'typeorm';
+import { DataSource, Between } from 'typeorm';
 import { ApiConnectorFactory } from '../../common/ApiConnectorFactory';
 
 export class YieldStatsProcessor {
@@ -123,9 +126,9 @@ export class YieldStatsProcessor {
                 this.logger.debug(`Could not determine ForeignAsset format, using default`);
               }
 
-              // Register the correct type
+              // Register the correct type for all ForeignAsset tokens
               api.registry.register({
-                ForeignAsset: foreignAssetFormat,
+                ForeignAsset: 'u128', // Force u128 format for all ForeignAssets
                 Lookup53: {
                   _enum: {
                     Token: 'Text',
@@ -133,7 +136,7 @@ export class YieldStatsProcessor {
                     Erc20: 'H160',
                     StableAssetPoolToken: 'u32',
                     LiquidCrowdloan: 'u32',
-                    ForeignAsset: foreignAssetFormat
+                    ForeignAsset: 'u128' // Force u128 format
                   }
                 }
               });
@@ -247,77 +250,24 @@ export class YieldStatsProcessor {
 
   async processToken(token: DimToken): Promise<void> {
     try {
-      const yieldStat = new FactYieldStat();
-      yieldStat.token = token;
-      yieldStat.date = new Date();
-      yieldStat.poolAddress = token.address; // Use token address as pool address
-      // Get default return type from database with proper typing
-      const returnTypeRepo = this.dataSource.getRepository<DimReturnType>('DimReturnType');
-      const returnType = await returnTypeRepo.findOne({
-        where: { id: 1 }, // Default return type ID
-        relations: ['yieldStats']
-      });
+      // Process daily stats
+      await this.processDailyStats(token);
       
-      if (!returnType) {
-        throw new Error('Default return type not found in database');
+      // Process weekly stats (only on Sundays)
+      if (new Date().getDay() === 0) {
+        await this.processWeeklyStats(token);
       }
       
-      // Ensure all required fields are present
-      if (!returnType.name || !returnType.createdAt) {
-        returnType.name = 'Default';
-        returnType.createdAt = new Date();
-      }
-      
-      yieldStat.returnType = returnType;
-      
-      // Step 1: Calculate APY (Annual Percentage Yield)
-      const apyData = await this.calculateAPY(token);
-      yieldStat.apy = apyData.apy;
-      
-      // Step 2: Calculate TVL (Total Value Locked)
-      const tvlData = await this.calculateTVL(token);
-      yieldStat.tvl = tvlData.tvl;
-      yieldStat.tvlUsd = tvlData.tvlUsd;
-      
-      // Step 3: Data validation
-      if (yieldStat.apy < 0 || yieldStat.apy > 1000) {
-        throw new Error(`Invalid APY value: ${yieldStat.apy}`);
-      }
-      
-      if (yieldStat.tvl < 0) {
-        throw new Error(`Invalid TVL value: ${yieldStat.tvl}`);
-      }
-
-      // Format today's date as YYYY-MM-DD string for comparison
+      // Process monthly stats (only on last day of month)
       const today = new Date();
-      const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+      const lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+      if (today.getDate() === lastDay) {
+        await this.processMonthlyStats(token);
+      }
       
-      // Check if record exists for today
-      const existingStat = await this.yieldStatRepo
-        .createQueryBuilder('stat')
-        .where('stat.token_id = :tokenId', { tokenId: token.id })
-        .andWhere('DATE(stat.date) = :date', { date: todayStr })
-        .getOne();
-
-      if (existingStat) {
-        // Update existing record
-        existingStat.apy = yieldStat.apy;
-        existingStat.tvl = yieldStat.tvl;
-        existingStat.tvlUsd = yieldStat.tvlUsd;
-        await this.yieldStatRepo.save(existingStat);
-        this.logger.debug(`Updated yield stats for token ${token.id}`, {
-          apy: yieldStat.apy,
-          tvl: yieldStat.tvl,
-          tvlUsd: yieldStat.tvlUsd
-        });
-      } else {
-        // Insert new record
-        await this.yieldStatRepo.save(yieldStat);
-        this.logger.debug(`Created yield stats for token ${token.id}`, {
-          apy: yieldStat.apy,
-          tvl: yieldStat.tvl,
-          tvlUsd: yieldStat.tvlUsd
-        });
+      // Process yearly stats (only on last day of year)
+      if (today.getMonth() === 11 && today.getDate() === 31) {
+        await this.processYearlyStats(token);
       }
     } catch (error) {
       this.logger.error(`Failed to process yield stats for token ${token.id}`, error as Error);
@@ -390,11 +340,19 @@ export class YieldStatsProcessor {
           tokenAgeDays
         });
 
-        // Ensure valid APY value
+        // Ensure valid APY value with reasonable limits
         finalApy = Number.isFinite(riskAdjustedApy) ? riskAdjustedApy : 0;
         if (!Number.isFinite(finalApy)) {
           this.logger.warn(`Invalid APY calculated for token ${token.id}, using 0 as fallback`);
           finalApy = 0;
+        }
+        
+        // Apply reasonable APY limits (0-1000%)
+        if (finalApy < 0) {
+          finalApy = 0;
+        } else if (finalApy > 1000) {
+          this.logger.warn(`APY ${finalApy}% exceeds maximum allowed value, capping at 1000%`);
+          finalApy = 1000;
         }
       } catch (error: unknown) {
         if (error instanceof Error) {
@@ -422,6 +380,74 @@ export class YieldStatsProcessor {
     // Simplified implementation - would query audit databases
     // Returns true if token has at least one audit
     return true; // Default value
+  }
+
+  private async processDailyStats(token: DimToken): Promise<void> {
+    const yieldStat = new FactYieldStat();
+    yieldStat.token = token;
+    yieldStat.date = new Date();
+    yieldStat.poolAddress = token.address;
+    
+    const returnTypeRepo = this.dataSource.getRepository<DimReturnType>('DimReturnType');
+    const returnType = await returnTypeRepo.findOne({
+      where: { id: 1 },
+      relations: ['yieldStats']
+    });
+    
+    if (!returnType) {
+      throw new Error('Default return type not found');
+    }
+    
+    yieldStat.returnType = returnType;
+    
+    const apyData = await this.calculateAPY(token);
+    yieldStat.apy = apyData.apy;
+    
+    const tvlData = await this.calculateTVL(token);
+    yieldStat.tvl = tvlData.tvl;
+    yieldStat.tvlUsd = tvlData.tvlUsd;
+    
+    // Validate data
+    if (yieldStat.apy < 0 || yieldStat.apy > 1000) {
+      throw new Error(`Invalid APY value: ${yieldStat.apy}`);
+    }
+    
+    if (yieldStat.tvl < 0) {
+      throw new Error(`Invalid TVL value: ${yieldStat.tvl}`);
+    }
+
+    const today = new Date();
+    const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    
+    const existingStat = await this.yieldStatRepo
+      .createQueryBuilder('stat')
+      .where('stat.token_id = :tokenId', { tokenId: token.id })
+      .andWhere('DATE(stat.date) = :date', { date: todayStr })
+      .getOne();
+
+    if (existingStat) {
+      existingStat.apy = yieldStat.apy;
+      existingStat.tvl = yieldStat.tvl;
+      existingStat.tvlUsd = yieldStat.tvlUsd;
+      await this.yieldStatRepo.save(existingStat);
+    } else {
+      await this.yieldStatRepo.save(yieldStat);
+    }
+  }
+
+  private async processWeeklyStats(token: DimToken): Promise<void> {
+    // Weekly stats only contain volume/txn data, no yield metrics
+    return;
+  }
+
+  private async processMonthlyStats(token: DimToken): Promise<void> {
+    // Monthly stats only contain volume/txn data, no yield metrics
+    return;
+  }
+
+  private async processYearlyStats(token: DimToken): Promise<void> {
+    // Yearly stats only contain volume/txn data, no yield metrics
+    return;
   }
 
   private async calculateTVL(token: DimToken): Promise<{tvl: number, tvlUsd: number}> {

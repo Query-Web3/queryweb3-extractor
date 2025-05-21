@@ -36,6 +36,15 @@ export class FactTokenYearlyStat {
   @Column({ name: 'txns_qoq', type: 'decimal', precision: 10, scale: 2, nullable: true })
   txnsQoq?: number;
 
+  @Column({ type: 'decimal', precision: 10, scale: 2 })
+  apy: number;
+
+  @Column({ type: 'decimal', precision: 36, scale: 18 })
+  tvl: number;
+
+  @Column({ name: 'tvl_usd', type: 'decimal', precision: 36, scale: 18 })
+  tvlUsd: number;
+
   @Column({ name: 'created_at', type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
   createdAt: Date;
 
