@@ -150,7 +150,7 @@ export class Logger {
         }
     }
 
-    public time(label: string) {
+            public time(label: string) {
         if (!this.shouldLog(LogLevel.DEBUG)) return { end: () => {} };
 
         console.time(label);
@@ -162,6 +162,7 @@ export class Logger {
                 const [seconds, nanoseconds] = process.hrtime(start);
                 const durationMs = (seconds * 1000) + (nanoseconds / 1000000);
                 
+                this.recordDuration(label, durationMs);
                 this.logToBatchLog(LogLevel.DEBUG, `Timing: ${label}`, {
                     durationMs,
                     label
