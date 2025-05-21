@@ -1,252 +1,27 @@
-import { FactYieldStat } from '../../../entities/FactYieldStat';
-import { FactTokenWeeklyStat } from '../../../entities/FactTokenWeeklyStat';
-import { FactTokenMonthlyStat } from '../../../entities/FactTokenMonthlyStat';
-import { FactTokenYearlyStat } from '../../../entities/FactTokenYearlyStat';
 import { Logger } from '../../../utils/logger';
 import { DimToken } from '../../../entities/DimToken';
 import { DimReturnType } from '../../../entities/DimReturnType';
-import { DataSource, Between } from 'typeorm';
+import { DataSource } from 'typeorm';
+import { YieldStatsService } from './YieldStatsService';
+import { YieldStatsRepository } from './YieldStatsRepository';
+import { YieldStatsCalculator } from './YieldStatsCalculator';
+import { FactYieldStat } from '../../../entities/FactYieldStat';
 import { ApiConnectorFactory } from '../../common/ApiConnectorFactory';
 
 export class YieldStatsProcessor {
+  private service: YieldStatsService;
+  private repository: YieldStatsRepository;
+  private calculator: YieldStatsCalculator;
+
   constructor(
     private dataSource: DataSource,
     private logger: Logger = Logger.getInstance()
-  ) {}
-
-  private async getTokenTotalSupply(tokenId: number): Promise<number> {
-    try {
-      const token = await this.dataSource.getRepository(DimToken).findOne({
-        where: { id: tokenId },
-        relations: ['chain']
-      });
-
-      this.logger.debug(`Token ${tokenId} query result:`, token ? {
-        id: token.id,
-        address: token.address,
-        chain: token.chain ? {
-          id: token.chain.id,
-          name: token.chain.name
-        } : null
-      } : null);
-
-      if (!token) {
-        this.logger.warn(`Token ${tokenId} not found, using default supply value`);
-        return 1000000; // Return default supply value
-      }
-
-      // Use Acala chain as fallback by default
-      const chainName = token.chain?.name || 'Acala';
-      const apiConnector = ApiConnectorFactory.getConnector(chainName.toLowerCase());
-      const api = await apiConnector.createApiConnection();
-      
-      // Use different methods to get total supply based on chain type
-      let totalSupply: bigint;
-      try {
-        if (token.chain.name === 'Acala') {
-          // Handle native ACA token differently
-          if (token.address === 'ACA') {
-            const result = await api.query.balances.totalIssuance();
-            totalSupply = BigInt(result.toString());
-          } else {
-            const result = await api.query.tokens.totalIssuance(token.address);
-            totalSupply = BigInt(result.toString());
-          }
-        } else if (token.chain.name === 'Bifrost') {
-          // Handle native BNC token differently
-          if (token.address === 'BNC') {
-            const result = await api.query.balances.totalIssuance();
-            totalSupply = BigInt(result.toString());
-          } else {
-            const result = await api.query.tokens.totalIssuance(token.address);
-            totalSupply = BigInt(result.toString());
-          }
-        } else if (token.address.startsWith('ForeignAsset-')) {
-          // Handle ForeignAsset type tokens
-          try {
-            const assetId = token.address.split('-')[1];
-            this.logger.debug(`Querying ForeignAsset supply for asset ID ${assetId}`);
-            
-            // Try direct query with proper type mapping
-            let result;
-            try {
-              // Get the chain's metadata to check available types
-              const metadata = api.runtimeMetadata;
-              const chainTypes = metadata.asLatest.lookup.types.toArray();
-              
-              // Check if ForeignAsset type exists
-              const hasForeignAsset = chainTypes.some(t => 
-                t.type.def.isComposite && 
-                t.type.def.asComposite.fields.some(f => 
-                  f.typeName?.toString().includes('ForeignAsset')
-                )
-              );
-
-              if (!hasForeignAsset) {
-                this.logger.warn(`ForeignAsset type not found in runtime metadata`);
-                return 1000000;
-              }
-              
-              // Find the correct type definition for ForeignAsset
-              const foreignAssetType = chainTypes.find(t => {
-                if (!t.type.def.isComposite) return false;
-                
-                const fields = t.type.def.asComposite.fields;
-                return fields.some(f => {
-                  try {
-                    const typeName = f.typeName?.toString() || '';
-                    return typeName.includes('ForeignAsset');
-                  } catch {
-                    return false;
-                  }
-                });
-              });
-
-              if (!foreignAssetType) {
-                this.logger.warn(`ForeignAsset type not found in chain metadata, using default value`);
-                return 1000000;
-              }
-
-              // Try to determine the correct format for ForeignAsset
-              let foreignAssetFormat = 'u128'; // default
-              try {
-              const typeDef = foreignAssetType.type.def.asComposite.fields[0];
-              if (typeDef.type) {
-                try {
-                  foreignAssetFormat = String(typeDef.type);
-                } catch {
-                  foreignAssetFormat = 'u128';
-                  this.logger.debug('Using default ForeignAsset format');
-                }
-              } else {
-                foreignAssetFormat = 'u128';
-                this.logger.debug('No type definition found, using default format');
-              }
-              } catch (e) {
-                this.logger.debug(`Could not determine ForeignAsset format, using default`);
-              }
-
-              // Register the correct type for all ForeignAsset tokens
-              api.registry.register({
-                ForeignAsset: 'u128', // Force u128 format for all ForeignAssets
-                Lookup53: {
-                  _enum: {
-                    Token: 'Text',
-                    DexShare: '(Text,Text)',
-                    Erc20: 'H160',
-                    StableAssetPoolToken: 'u32',
-                    LiquidCrowdloan: 'u32',
-                    ForeignAsset: 'u128' // Force u128 format
-                  }
-                }
-              });
-
-              // Try querying with proper type format
-              let result;
-              try {
-              // First try with full ForeignAsset-{id} format
-              const assetKey = api.createType('Lookup53', { ForeignAsset: token.address });
-              result = await api.query.tokens.totalIssuance(assetKey);
-
-              // If still no result, try with numeric ID if format supports it
-              if (!result && (foreignAssetFormat === 'u128' || foreignAssetFormat === 'u32')) {
-                const numericId = Number(assetId);
-                if (!isNaN(numericId)) {
-                  const assetKey = api.createType('Lookup53', { ForeignAsset: numericId });
-                  result = await api.query.tokens.totalIssuance(assetKey);
-                }
-              }
-
-                // Final fallback to raw query
-                if (!result) {
-                  result = await api.query.tokens.totalIssuance(assetId);
-                }
-              } catch (error) {
-                const errorMsg = error instanceof Error ? error.message : String(error);
-              this.logger.error(`Failed to query ForeignAsset ${assetId}: ${errorMsg}`);
-                return 1000000;
-              }
-
-              if (!result) {
-                this.logger.warn(`All query attempts failed for ForeignAsset ${assetId}, using default value`);
-                return 1000000;
-              }
-            } catch (error) {
-              const errorMsg = error instanceof Error ? error.message : String(error);
-              this.logger.error(`ForeignAsset query failed for asset ${assetId}: ${errorMsg}`);
-              this.logger.debug(`API Version: ${api.runtimeVersion.toHuman()}`);
-              return 1000000; // Return default supply value
-            }
-            
-            if (!result) {
-              throw new Error('No result from ForeignAsset supply query');
-            }
-            
-            const supplyString = result ? String(result) : '0';
-            totalSupply = BigInt(supplyString);
-            this.logger.debug(`Got ForeignAsset supply for asset ID ${assetId}: ${supplyString}`);
-          } catch (error) {
-            this.logger.warn(`Failed to get supply for ForeignAsset token ${token.address}`, error as Error);
-            return 1000000; // Return default supply value
-          }
-        } else if (token.address.startsWith('Token-')) {
-          // Handle Token- prefixed assets (like Token-DOT)
-          try {
-            const tokenName = token.address.split('-')[1];
-            this.logger.debug(`Querying token supply for ${tokenName}`);
-            
-            // Try different token query formats
-            const result = await api.query.tokens.totalIssuance({ Token: tokenName }) || 
-                          await api.query.tokens.totalIssuance(tokenName) ||
-                          await api.query.assets.account(tokenName);
-            
-            if (!result) {
-              throw new Error('No result from token supply query');
-            }
-            
-            totalSupply = BigInt(result.toString());
-            this.logger.debug(`Got token supply for ${tokenName}: ${totalSupply}`);
-          } catch (error) {
-            this.logger.warn(`Failed to get supply for Token- prefixed token ${token.address}`, error as Error);
-            return 1000000; // Return default supply value
-          }
-        } else {
-          // Default to using ERC20 balanceOf method
-          const result = await api.query.assets.account(token.address, { owner: token.address });
-          const accountInfo = result.toJSON() as { balance?: string } || {};
-          totalSupply = BigInt(accountInfo.balance || '0');
-        }
-      } catch (error) {
-        this.logger.warn(`Failed to get supply for token ${token.id} with address ${token.address}`, error as Error);
-        return 1000000; // Return default supply value
-      }
-
-      await apiConnector.disconnectApi(api);
-      return Number(totalSupply);
-    } catch (error) {
-      this.logger.error(`Failed to get total supply for token ${tokenId}`, error as Error);
-      return 0; // Return 0 as default value
-    }
+  ) {
+    this.service = new YieldStatsService(dataSource, logger);
+    this.repository = new YieldStatsRepository(dataSource, logger);
+    this.calculator = new YieldStatsCalculator(logger);
   }
 
-  private async getLockedRatio(contractAddress: string): Promise<number> {
-    // Implementation to query staking contract for locked ratio
-    // This would typically call a blockchain RPC
-    // For now returning a default value
-    return 0.7;
-  }
-
-  private async getTokenPrice(tokenId: number): Promise<number> {
-    // Implementation to get price from price oracle
-    const token = await this.dataSource.getRepository(DimToken).findOne({
-      where: { id: tokenId }
-    });
-    return (token as any)?.priceUsd || 1;
-  }
-
-  get yieldStatRepo() {
-    return this.dataSource.getRepository(FactYieldStat);
-  }
 
   async processToken(token: DimToken): Promise<void> {
     try {
@@ -278,7 +53,7 @@ export class YieldStatsProcessor {
   private async calculateAPY(token: DimToken): Promise<{apy: number}> {
     try {
       // Step 1: Get historical yield data
-      const history = await this.yieldStatRepo.find({
+      const history = await this.repository.yieldStatRepo.find({
         where: { token: { id: token.id } },
         order: { date: 'DESC' },
         take: 30 // Get last 30 days data
@@ -383,27 +158,37 @@ export class YieldStatsProcessor {
   }
 
   private async processDailyStats(token: DimToken): Promise<void> {
-    const yieldStat = new FactYieldStat();
+    const today = new Date();
+    
+    // Get or create daily stat
+    const existingStat = await this.repository.findExistingDailyStat(token.id, today);
+    const yieldStat = existingStat || new FactYieldStat();
+    
+    // Set basic stat info
     yieldStat.token = token;
-    yieldStat.date = new Date();
+    yieldStat.date = today;
     yieldStat.poolAddress = token.address;
     
-    const returnTypeRepo = this.dataSource.getRepository<DimReturnType>('DimReturnType');
-    const returnType = await returnTypeRepo.findOne({
-      where: { id: 1 },
-      relations: ['yieldStats']
-    });
-    
-    if (!returnType) {
-      throw new Error('Default return type not found');
-    }
-    
+    // Get return type
+    const returnType = await this.dataSource.getRepository<DimReturnType>('DimReturnType')
+      .findOne({ where: { id: 1 }, relations: ['yieldStats'] });
+    if (!returnType) throw new Error('Default return type not found');
     yieldStat.returnType = returnType;
     
-    const apyData = await this.calculateAPY(token);
-    yieldStat.apy = apyData.apy;
+    // Calculate APY using service
+    const history = await this.repository.yieldStatRepo.find({
+      where: { token: { id: token.id } },
+      order: { date: 'DESC' },
+      take: 30
+    });
+    const { apy } = await this.calculator.calculateAPY(history);
+    yieldStat.apy = apy;
     
-    const tvlData = await this.calculateTVL(token);
+    // Calculate TVL using service
+    const totalSupply = await this.service.getTokenTotalSupply(token.id);
+    const lockedRatio = await this.service.getLockedRatio(token.address);
+    const usdRate = await this.service.getTokenPrice(token.id);
+    const tvlData = await this.calculator.calculateTVL(totalSupply, lockedRatio, usdRate);
     yieldStat.tvl = tvlData.tvl;
     yieldStat.tvlUsd = tvlData.tvlUsd;
     
@@ -411,55 +196,39 @@ export class YieldStatsProcessor {
     if (yieldStat.apy < 0 || yieldStat.apy > 1000) {
       throw new Error(`Invalid APY value: ${yieldStat.apy}`);
     }
-    
     if (yieldStat.tvl < 0) {
       throw new Error(`Invalid TVL value: ${yieldStat.tvl}`);
     }
 
-    const today = new Date();
-    const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-    
-    const existingStat = await this.yieldStatRepo
-      .createQueryBuilder('stat')
-      .where('stat.token_id = :tokenId', { tokenId: token.id })
-      .andWhere('DATE(stat.date) = :date', { date: todayStr })
-      .getOne();
-
-    if (existingStat) {
-      existingStat.apy = yieldStat.apy;
-      existingStat.tvl = yieldStat.tvl;
-      existingStat.tvlUsd = yieldStat.tvlUsd;
-      await this.yieldStatRepo.save(existingStat);
-    } else {
-      await this.yieldStatRepo.save(yieldStat);
-    }
+    // Save the stat
+    await this.repository.saveDailyStat(yieldStat);
   }
 
   private async processWeeklyStats(token: DimToken): Promise<void> {
-    // Weekly stats only contain volume/txn data, no yield metrics
-    return;
+    // Delegate to service layer
+    await this.service.processWeeklyStats(token);
   }
 
   private async processMonthlyStats(token: DimToken): Promise<void> {
-    // Monthly stats only contain volume/txn data, no yield metrics
-    return;
+    // Delegate to service layer
+    await this.service.processMonthlyStats(token);
   }
 
   private async processYearlyStats(token: DimToken): Promise<void> {
-    // Yearly stats only contain volume/txn data, no yield metrics
-    return;
+    // Delegate to service layer
+    await this.service.processYearlyStats(token);
   }
 
   private async calculateTVL(token: DimToken): Promise<{tvl: number, tvlUsd: number}> {
     try {
       // Step 1: Get token total supply from database
-      const totalSupply = await this.getTokenTotalSupply(token.id);
+      const totalSupply = await this.service.getTokenTotalSupply(token.id);
       if (!totalSupply) {
         throw new Error(`Cannot get total supply for token ${token.id}`);
       }
       
       // Step 2: Get locked ratio from staking contract
-      const lockedRatio = await this.getLockedRatio(token.address);
+      const lockedRatio = await this.service.getLockedRatio(token.address);
       if (lockedRatio <= 0 || lockedRatio > 1) {
         throw new Error(`Invalid locked ratio: ${lockedRatio}`);
       }
@@ -468,7 +237,7 @@ export class YieldStatsProcessor {
       const tvl = totalSupply * lockedRatio;
       
       // Step 4: Convert to USD using price oracle
-      const usdRate = await this.getTokenPrice(token.id);
+      const usdRate = await this.service.getTokenPrice(token.id);
       const tvlUsd = tvl * usdRate;
 
       // Ensure valid TVL values
