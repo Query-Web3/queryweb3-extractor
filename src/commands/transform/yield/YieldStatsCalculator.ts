@@ -20,8 +20,8 @@ export class YieldStatsCalculator {
     // Annualize with compounding
     let apy = (Math.pow(1 + avgDailyYield, 365) - 1) * 100;
 
-    // Apply risk factors
-    apy = await this.applyRiskFactors(apy, history[0].token);
+    // Apply risk factors if token data exists
+    apy = history[0].token ? await this.applyRiskFactors(apy, history[0].token) : apy;
 
     // Ensure valid APY value
     return { apy: this.validateAPY(apy) };
