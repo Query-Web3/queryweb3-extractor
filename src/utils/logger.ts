@@ -41,7 +41,9 @@ export class Logger {
     }
 
     public recordDuration(label: string, durationMs: number) {
+        console.debug(`[DEBUG] Recording duration for ${label}: ${durationMs}ms`);
         this.metrics.durations[label] = durationMs;
+        console.debug(`[DEBUG] Current durations:`, this.metrics.durations);
     }
 
     public getMetrics(): Metrics {
@@ -54,11 +56,12 @@ export class Logger {
     }
 
     public resetMetrics() {
+        // 保留durations数据，只重置计数指标
         this.metrics = {
             totalProcessed: 0,
             successCount: 0,
             errorCount: 0,
-            durations: {},
+            durations: this.metrics.durations || {},
             throughput: 0
         };
     }

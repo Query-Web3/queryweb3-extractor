@@ -23,7 +23,7 @@ import { Logger, LogLevel } from '../../utils/logger';
 
 export async function transformData(batchLog?: BatchLog) {
     const logger = Logger.getInstance();
-    logger.setLogLevel(process.env.LOG_LEVEL as LogLevel || LogLevel.INFO);
+    logger.setLogLevel(process.env.LOG_LEVEL as LogLevel || LogLevel.DEBUG);
 
     if (!batchLog) {
         batchLog = new BatchLog();
@@ -52,9 +52,10 @@ export async function transformData(batchLog?: BatchLog) {
         logger.info('Database connection established');
         initTimer.end();
 
-        const queryRunner = dataSource.createQueryRunner();
-        await queryRunner.connect();
-        await queryRunner.startTransaction();
+            const queryRunner = dataSource.createQueryRunner();
+            const transactionTimer = logger.time('Database transaction');
+            await queryRunner.connect();
+            await queryRunner.startTransaction();
         
         try {
             const blockTimer = logger.time('Query latest block');
@@ -83,25 +84,28 @@ export async function transformData(batchLog?: BatchLog) {
 
             if (acalaBlocks.length > 0) {
                 const acalaTimer = logger.time('Process Acala block data');
-                logger.info(`Found ${acalaBlocks.length} blocks with Acala data`);
-                
-                for (const block of acalaBlocks) {
-                    try {
-                        const acalaData = block.acalaData;
-                        if (acalaData?.events) {
-                            for (const event of acalaData.events) {
-                                if (event?.currencyId) {
-                                    tokenIds.add(event.currencyId);
+                try {
+                    logger.info(`Found ${acalaBlocks.length} blocks with Acala data`);
+                    
+                    for (const block of acalaBlocks) {
+                        try {
+                            const acalaData = block.acalaData;
+                            if (acalaData?.events) {
+                                for (const event of acalaData.events) {
+                                    if (event?.currencyId) {
+                                        tokenIds.add(event.currencyId);
+                                    }
                                 }
                             }
+                            logger.recordSuccess();
+                        } catch (e) {
+                            logger.error(`Failed to process Acala data for block #${block.number}`, e as Error);
+                            logger.recordError();
                         }
-                        logger.recordSuccess();
-                    } catch (e) {
-                        logger.error(`Failed to process Acala data for block #${block.number}`, e as Error);
-                        logger.recordError();
                     }
+                } finally {
+                    acalaTimer.end();
                 }
-                acalaTimer.end();
             }
 
             
@@ -115,37 +119,40 @@ export async function transformData(batchLog?: BatchLog) {
             ];
 
             const processTimer = logger.time('Process extrinsics');
-            const extrinsics = await dataSource.getRepository(AcalaExtrinsic)
-                .createQueryBuilder('extrinsic')
-                .where('extrinsic.method IN (:...methods)', { methods: methodsToProcess })
-                .groupBy('extrinsic.params')
-                .getMany();
+            try {
+                const extrinsics = await dataSource.getRepository(AcalaExtrinsic)
+                    .createQueryBuilder('extrinsic')
+                    .where('extrinsic.method IN (:...methods)', { methods: methodsToProcess })
+                    .groupBy('extrinsic.params')
+                    .getMany();
 
-            for (const extrinsic of extrinsics) {
-                    try {
-                        const method = extrinsic.method;
-                        const params = extrinsic.params as any;
-                        
-                        if (method.startsWith('tokens.') && params?.currencyId) {
-                            tokenIds.add(params.currencyId);
-                        } else if (method.startsWith('dex.') && params?.path) {
-                            for (const currencyId of params.path) {
-                                tokenIds.add(currencyId);
+                for (const extrinsic of extrinsics) {
+                        try {
+                            const method = extrinsic.method;
+                            const params = extrinsic.params as any;
+                            
+                            if (method.startsWith('tokens.') && params?.currencyId) {
+                                tokenIds.add(params.currencyId);
+                            } else if (method.startsWith('dex.') && params?.path) {
+                                for (const currencyId of params.path) {
+                                    tokenIds.add(currencyId);
+                                }
+                            } else if (method.startsWith('homa.')) {
+                                tokenIds.add('ACA');
                             }
-                        } else if (method.startsWith('homa.')) {
-                            tokenIds.add('ACA');
+                            logger.recordSuccess();
+                        } catch (e) {
+                            logger.error(`Failed to process extrinsic`, e as Error, {
+                                extrinsicId: extrinsic.id,
+                                method: extrinsic.method,
+                                params: extrinsic.params
+                            });
+                            logger.recordError();
                         }
-                        logger.recordSuccess();
-                    } catch (e) {
-                        logger.error(`Failed to process extrinsic`, e as Error, {
-                            extrinsicId: extrinsic.id,
-                            method: extrinsic.method,
-                            params: extrinsic.params
-                        });
-                        logger.recordError();
-                    }
+                }
+            } finally {
+                processTimer.end();
             }
-            processTimer.end();
 
             // Process events
             const eventPatterns = [
@@ -157,123 +164,159 @@ export async function transformData(batchLog?: BatchLog) {
             ];
 
             const eventTimer = logger.time('Process events');
-            const events = await dataSource.getRepository(AcalaEvent)
-                .createQueryBuilder('event')
-                .where('LOWER(event.section) IN (:...sections) AND LOWER(event.method) IN (:...methods)', {
-                    sections: eventPatterns.map(p => p.section.toLowerCase()),
-                    methods: eventPatterns.map(p => p.method.toLowerCase())
-                })
-                .getMany();
+            try {
+                const events = await dataSource.getRepository(AcalaEvent)
+                    .createQueryBuilder('event')
+                    .where('LOWER(event.section) IN (:...sections) AND LOWER(event.method) IN (:...methods)', {
+                        sections: eventPatterns.map(p => p.section.toLowerCase()),
+                        methods: eventPatterns.map(p => p.method.toLowerCase())
+                    })
+                    .getMany();
 
-            for (const event of events) {
-                try {
-                    const data = event.data as any;
-                    if (data?.currencyId) {
-                        tokenIds.add(data.currencyId);
+                for (const event of events) {
+                    try {
+                        const data = event.data as any;
+                        if (data?.currencyId) {
+                            tokenIds.add(data.currencyId);
+                        }
+                        logger.recordSuccess();
+                    } catch (e) {
+                        logger.error(`Failed to process event`, e as Error, {
+                            eventId: event.id,
+                            section: event.section,
+                            method: event.method,
+                            data: event.data
+                        });
+                        logger.recordError();
                     }
-                    logger.recordSuccess();
-                } catch (e) {
-                    logger.error(`Failed to process event`, e as Error, {
-                        eventId: event.id,
-                        section: event.section,
-                        method: event.method,
-                        data: event.data
-                    });
-                    logger.recordError();
                 }
+            } finally {
+                eventTimer.end();
             }
-            eventTimer.end();
 
             // Unified processing of tokens and stats
             if (tokenIds.size > 0) {
                 const processTimer = logger.time('Process tokens and stats');
-                const tokenService = new TokenService(
-                    new TokenRepository(),
-                    new TokenValidator(),
-                    new TokenFactory()
-                );
-                
-                const tokenArray = Array.from(tokenIds);
-                logger.info(`Found ${tokenArray.length} tokens to process`);
-
-                // Initialize dimensions first
-                const dimensionInitializer = new DimensionInitializer();
-                await dimensionInitializer.initialize();
-
-                // Process each token with stats
-                for (const tokenId of tokenArray) {
-                    try {
-                        // Upsert token to dim table
-                        const token = await tokenService.upsertToken(tokenId);
-                        logger.debug(`Processed token: ${tokenId}`);
-
-                        // Process token stats to fact tables
-                        const tokenStatsRepo = new TokenStatsRepository(dataSource);
-                        
-                        // Process daily stats first
-                        const dailyStatsProcessor = new DailyStatsProcessor(tokenStatsRepo, logger);
-                        await dailyStatsProcessor.processToken(token);
-                        
-                        // Then process weekly stats (aggregates daily)
-                        const weeklyStatsProcessor = new WeeklyStatsProcessor(tokenStatsRepo, logger);
-                        await weeklyStatsProcessor.processToken(token);
-                        
-                        // Then process monthly stats (aggregates weekly)
-                        const monthlyStatsProcessor = new MonthlyStatsProcessor(tokenStatsRepo, logger);
-                        await monthlyStatsProcessor.processToken(token);
-                        
-                        // Finally process yearly stats (aggregates monthly)
-                        const yearlyStatsProcessor = new YearlyStatsProcessor(tokenStatsRepo, logger);
-                        await yearlyStatsProcessor.processToken(token);
-                        
-                        const yieldStatsProcessor = new YieldStatsProcessor(dataSource, logger);
-                        await yieldStatsProcessor.processToken(token);
-                        
-                        logger.recordSuccess();
-                    } catch (e) {
-                        logger.error(`Failed to process token ${tokenId}`, e as Error);
-                        logger.recordError();
-                    }
-                }
-
-                // Validate data consistency
-                const tokenCount = await dataSource.getRepository(DimToken).count();
-                const blockCount = await blockRepo.count();
-                
-                if (tokenCount === 0) {
-                    logger.warn('No tokens found in DimToken table');
-                }
-                if (blockCount === 0) {
-                    logger.warn('No blocks found in acala_block table');
-                }
-
-                // Update Redis cache
                 try {
-                    const allTokens = await dataSource.getRepository(DimToken).find();
-                    await tokenService['redisClient'].set(
-                        'dim_tokens',
-                        JSON.stringify(allTokens),
-                        { EX: 3600 }
+                    const tokenService = new TokenService(
+                        new TokenRepository(),
+                        new TokenValidator(),
+                        new TokenFactory()
                     );
-                    logger.info(`Updated Redis cache with ${allTokens.length} tokens`);
-                } catch (e) {
-                    logger.error('Failed to update Redis cache', e as Error);
-                }
+                    
+                    const tokenArray = Array.from(tokenIds);
+                    logger.info(`Found ${tokenArray.length} tokens to process`);
 
-                processTimer.end();
+                    // Initialize dimensions first
+                    const dimensionInitializer = new DimensionInitializer();
+                    await dimensionInitializer.initialize();
+
+                    // Process each token with stats
+                    for (const tokenId of tokenArray) {
+                        const tokenTimer = logger.time(`Process token ${tokenId}`);
+                        try {
+                            // Upsert token to dim table
+                            const token = await tokenService.upsertToken(tokenId);
+                            logger.debug(`Processed token: ${tokenId}`);
+
+                            // Process token stats to fact tables
+                            const tokenStatsRepo = new TokenStatsRepository(dataSource);
+                            
+                            // Process daily stats first
+                            const dailyStatsProcessor = new DailyStatsProcessor(tokenStatsRepo, logger);
+                            await dailyStatsProcessor.processToken(token);
+                            
+                            // Then process weekly stats (aggregates daily)
+                            const weeklyStatsProcessor = new WeeklyStatsProcessor(tokenStatsRepo, logger);
+                            await weeklyStatsProcessor.processToken(token);
+                            
+                            // Then process monthly stats (aggregates weekly)
+                            const monthlyStatsProcessor = new MonthlyStatsProcessor(tokenStatsRepo, logger);
+                            await monthlyStatsProcessor.processToken(token);
+                            
+                            // Finally process yearly stats (aggregates monthly)
+                            const yearlyStatsProcessor = new YearlyStatsProcessor(tokenStatsRepo, logger);
+                            await yearlyStatsProcessor.processToken(token);
+                            
+                            const yieldStatsProcessor = new YieldStatsProcessor(dataSource, logger);
+                            await yieldStatsProcessor.processToken(token);
+                            
+                            logger.recordSuccess();
+                        } catch (e) {
+                            logger.error(`Failed to process token ${tokenId}`, e as Error);
+                            logger.recordError();
+                        }
+                    }
+
+                    // Validate data consistency
+                    const tokenCount = await dataSource.getRepository(DimToken).count();
+                    const blockCount = await blockRepo.count();
+                    
+                    if (tokenCount === 0) {
+                        logger.warn('No tokens found in DimToken table');
+                    }
+                    if (blockCount === 0) {
+                        logger.warn('No blocks found in acala_block table');
+                    }
+
+                    // Update Redis cache
+                    const redisTimer = logger.time('Update Redis cache');
+                    try {
+                        const allTokens = await dataSource.getRepository(DimToken).find();
+                        await tokenService['redisClient'].set(
+                            'dim_tokens',
+                            JSON.stringify(allTokens),
+                            { EX: 3600 }
+                        );
+                        logger.info(`Updated Redis cache with ${allTokens.length} tokens`);
+                    } catch (e) {
+                        logger.error('Failed to update Redis cache', e as Error);
+                    } finally {
+                        redisTimer.end();
+                    }
+                } finally {
+                    processTimer.end();
+                }
             }
             
             await queryRunner.commitTransaction();
             const metrics = logger.getMetrics();
+            logger.debug('Metrics durations:', metrics.durations); // 调试输出
             const finalTokenCount = await dataSource.getRepository(DimToken).count();
             const finalBlockCount = await blockRepo.count();
             logger.info(`Data transformation completed. Stats: ${finalTokenCount} tokens, ${finalBlockCount} blocks processed`);
-            logger.info(`Performance metrics: 
-  - Success rate: ${metrics.throughput.toFixed(2)}%
-  - Total processed: ${metrics.totalProcessed}
-  - Success count: ${metrics.successCount}
-  - Error count: ${metrics.errorCount}
-  - Processing durations: ${JSON.stringify(metrics.durations, null, 2)}`);
+            // Format all durations with proper indentation
+            const durationsStr = Object.entries(metrics.durations)
+                .map(([label, duration]) => {
+                    const indent = label.startsWith('Process token') ? '      ' : '    ';
+                    return `${indent}- ${label}: ${duration.toFixed(2)}ms`;
+                })
+                .join('\n');
+            
+            // Group token processing stats
+            const tokenStats = Object.entries(metrics.durations)
+                .filter(([label]) => label.startsWith('Process token'))
+                .reduce((acc, [_, duration]) => {
+                    acc.count++;
+                    acc.total += duration;
+                    return acc;
+                }, {count: 0, total: 0});
+
+            const summaryStr = [
+                `Performance metrics:`,
+                `  - Success rate: ${metrics.throughput.toFixed(2)}%`,
+                `  - Total processed: ${metrics.totalProcessed}`,
+                `  - Success count: ${metrics.successCount}`,
+                `  - Error count: ${metrics.errorCount}`,
+                `  - Processing durations:`,
+                `    - Total time: ${Object.values(metrics.durations).reduce((a, b) => a + b, 0).toFixed(2)}ms`,
+                tokenStats.count > 0 ? 
+                    `    - Token processing: ${tokenStats.count} tokens, avg ${(tokenStats.total/tokenStats.count).toFixed(2)}ms/token` : 
+                    '',
+                `Detailed timings:\n${durationsStr}`
+            ].filter(Boolean).join('\n');
+
+            logger.info(summaryStr);
         } catch (e) {
             await queryRunner.rollbackTransaction();
             logger.error('Transaction rolled back due to error', e as Error);
