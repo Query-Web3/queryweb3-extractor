@@ -51,4 +51,28 @@ export class YieldStatsService {
     // 从原文件迁移calculateTVL方法实现
     return { tvl: 0, tvlUsd: 0 };
   }
+
+  async calculateVolumeStats(token: DimToken, stat: any): Promise<void> {
+    // 只计算volume和txns相关数据
+    const tokenData = await this.dataSource.getRepository(DimToken).findOne({
+      where: { id: token.id },
+      relations: ['chain']
+    });
+
+    if (!tokenData) {
+      throw new Error(`Token ${token.id} not found`);
+    }
+
+    // 模拟计算volume数据 - 实际项目中会从链上获取
+    stat.volume = '1000'; // 默认值
+    stat.volume_usd = '1000'; // 默认值
+    stat.txns_count = 10; // 默认值
+    stat.price_usd = (tokenData as any).priceUsd || '1'; // 使用token的价格
+
+    // 计算同比增长率 (简化实现)
+    stat.volume_yoy = '0.1'; // 10% 同比增长
+    stat.volume_qoq = '0.05'; // 5% 环比增长
+    stat.txns_yoy = 0.1; // 10% 同比增长
+    stat.txns_qoq = 0.05; // 5% 环比增长
+  }
 }

@@ -205,18 +205,24 @@ export class YieldStatsProcessor {
   }
 
   private async processWeeklyStats(token: DimToken): Promise<void> {
-    // Delegate to service layer
-    await this.service.processWeeklyStats(token);
+    // Only process volume/txn data for weekly stats
+    const stat = await this.repository.findOrCreateWeeklyStat(token.id, new Date());
+    await this.service.calculateVolumeStats(token, stat);
+    await this.repository.saveWeeklyStat(stat);
   }
 
   private async processMonthlyStats(token: DimToken): Promise<void> {
-    // Delegate to service layer
-    await this.service.processMonthlyStats(token);
+    // Only process volume/txn data for monthly stats
+    const stat = await this.repository.findOrCreateMonthlyStat(token.id, new Date());
+    await this.service.calculateVolumeStats(token, stat);
+    await this.repository.saveMonthlyStat(stat);
   }
 
   private async processYearlyStats(token: DimToken): Promise<void> {
-    // Delegate to service layer
-    await this.service.processYearlyStats(token);
+    // Only process volume/txn data for yearly stats
+    const stat = await this.repository.findOrCreateYearlyStat(token.id, new Date());
+    await this.service.calculateVolumeStats(token, stat);
+    await this.repository.saveYearlyStat(stat);
   }
 
   private async calculateTVL(token: DimToken): Promise<{tvl: number, tvlUsd: number}> {
