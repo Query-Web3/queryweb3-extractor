@@ -203,10 +203,15 @@ export class MonthlyStatsProcessor {
             }
 
             if (hasFullQuarterData) {
-                volumeQoQ = prevQuarterStat.volume ? 
+                // 确保分母不为0且计算有效
+                volumeQoQ = prevQuarterStat.volume && prevQuarterStat.volume !== 0 ? 
                     ((monthlyVolume - prevQuarterStat.volume) / prevQuarterStat.volume * 100) : 0;
-                txnsQoQ = prevQuarterStat.txnsCount ?
+                txnsQoQ = prevQuarterStat.txnsCount && prevQuarterStat.txnsCount !== 0 ?
                     ((monthlyTxns - prevQuarterStat.txnsCount) / prevQuarterStat.txnsCount * 100) : 0;
+                
+                // 确保计算结果有效
+                volumeQoQ = isFinite(volumeQoQ) ? volumeQoQ : 0;
+                txnsQoQ = isFinite(txnsQoQ) ? txnsQoQ : 0;
             }
 
             // 验证volume值
@@ -222,8 +227,8 @@ export class MonthlyStatsProcessor {
                 priceUsd: safeTokenPrice,
                 volumeYoy: volumeYoY,
                 txnsYoy: txnsYoY,
-                volumeQoq: volumeQoQ,
-                txnsQoq: txnsQoQ
+                volumeQoq: isFinite(volumeQoQ) ? volumeQoQ : 0,
+                txnsQoq: isFinite(txnsQoQ) ? txnsQoQ : 0
             };
 
             // 记录验证日志

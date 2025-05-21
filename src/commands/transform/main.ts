@@ -12,6 +12,9 @@ import { TokenValidator } from './token/TokenValidator';
 import { TokenFactory } from './token/TokenFactory';
 import { DimensionInitializer } from './token/DimensionInitializer';
 import { DailyStatsProcessor } from './periodic/dailyStatsProcessor';
+import { WeeklyStatsProcessor } from './periodic/weeklyStatsProcessor';
+import { MonthlyStatsProcessor } from './periodic/monthlyStatsProcessor';
+import { YearlyStatsProcessor } from './periodic/yearlyStatsProcessor';
 import { TokenStatsRepository } from './token/tokenStatsRepository';
 import { YieldStatsProcessor } from './yield/yieldStatsProcessor';
 import { DataSource } from 'typeorm';
@@ -206,8 +209,22 @@ export async function transformData(batchLog?: BatchLog) {
 
                         // Process token stats to fact tables
                         const tokenStatsRepo = new TokenStatsRepository(dataSource);
+                        
+                        // Process daily stats first
                         const dailyStatsProcessor = new DailyStatsProcessor(tokenStatsRepo, logger);
                         await dailyStatsProcessor.processToken(token);
+                        
+                        // Then process weekly stats (aggregates daily)
+                        const weeklyStatsProcessor = new WeeklyStatsProcessor(tokenStatsRepo, logger);
+                        await weeklyStatsProcessor.processToken(token);
+                        
+                        // Then process monthly stats (aggregates weekly)
+                        const monthlyStatsProcessor = new MonthlyStatsProcessor(tokenStatsRepo, logger);
+                        await monthlyStatsProcessor.processToken(token);
+                        
+                        // Finally process yearly stats (aggregates monthly)
+                        const yearlyStatsProcessor = new YearlyStatsProcessor(tokenStatsRepo, logger);
+                        await yearlyStatsProcessor.processToken(token);
                         
                         const yieldStatsProcessor = new YieldStatsProcessor(dataSource, logger);
                         await yieldStatsProcessor.processToken(token);

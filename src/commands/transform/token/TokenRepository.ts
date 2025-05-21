@@ -23,6 +23,7 @@ export class TokenRepository implements ITokenRepository {
         // 记录操作前token数量
         const beforeCount = await tokenRepo.count();
         this.logger.debug(`Before upsert: ${beforeCount} tokens in database`);
+        this.logger.debug(`Input data for upsert: ${JSON.stringify(input, null, 2)}`);
         
         try {
             // 查找现有token
@@ -32,7 +33,7 @@ export class TokenRepository implements ITokenRepository {
             
             if (!token) {
                 this.logger.info(`Creating new token: ${input.key}`);
-                token = tokenRepo.create({
+                const newToken = {
                     chainId: 1, // 默认chainId
                     address: input.key,
                     symbol: input.symbol,
@@ -40,8 +41,11 @@ export class TokenRepository implements ITokenRepository {
                     decimals: input.decimals,
                     assetTypeId: 1, // 默认assetType
                     updatedAt: new Date()
-                });
-                await tokenRepo.save(token);
+                };
+                this.logger.debug(`Creating token with data: ${JSON.stringify(newToken, null, 2)}`);
+                
+                token = tokenRepo.create(newToken);
+                const savedToken = await tokenRepo.save(token);
                 
                 // 验证是否创建成功
                 const afterCount = await tokenRepo.count();
@@ -49,8 +53,10 @@ export class TokenRepository implements ITokenRepository {
                     throw new Error(`Token creation failed for ${input.key}`);
                 }
                 this.logger.info(`Successfully created token: ${input.key}`);
+                this.logger.debug(`Created token details: ${JSON.stringify(savedToken, null, 2)}`);
             } else {
                 this.logger.debug(`Token already exists: ${input.key}`);
+                this.logger.debug(`Existing token details: ${JSON.stringify(token, null, 2)}`);
             }
             
             return token;
