@@ -141,20 +141,18 @@ export class YieldStatsProcessor {
               // Try querying with proper type format
               let result;
               try {
-                // First try with numeric ID if format supports it
-                if (foreignAssetFormat === 'u128' || foreignAssetFormat === 'u32') {
-                  const numericId = Number(assetId);
-                  if (!isNaN(numericId)) {
-                    const assetKey = api.createType('Lookup53', { ForeignAsset: numericId });
-                    result = await api.query.tokens.totalIssuance(assetKey);
-                  }
-                }
+              // First try with full ForeignAsset-{id} format
+              const assetKey = api.createType('Lookup53', { ForeignAsset: token.address });
+              result = await api.query.tokens.totalIssuance(assetKey);
 
-                // If still no result, try with string ID
-                if (!result) {
-                  const assetKey = api.createType('Lookup53', { ForeignAsset: assetId });
+              // If still no result, try with numeric ID if format supports it
+              if (!result && (foreignAssetFormat === 'u128' || foreignAssetFormat === 'u32')) {
+                const numericId = Number(assetId);
+                if (!isNaN(numericId)) {
+                  const assetKey = api.createType('Lookup53', { ForeignAsset: numericId });
                   result = await api.query.tokens.totalIssuance(assetKey);
                 }
+              }
 
                 // Final fallback to raw query
                 if (!result) {
@@ -290,12 +288,37 @@ export class YieldStatsProcessor {
         throw new Error(`Invalid TVL value: ${yieldStat.tvl}`);
       }
 
-      await this.yieldStatRepo.save(yieldStat);
-      this.logger.debug(`Processed yield stats for token ${token.id}`, {
-        apy: yieldStat.apy,
-        tvl: yieldStat.tvl,
-        tvlUsd: yieldStat.tvlUsd
-      });
+      // Format today's date as YYYY-MM-DD string for comparison
+      const today = new Date();
+      const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+      
+      // Check if record exists for today
+      const existingStat = await this.yieldStatRepo
+        .createQueryBuilder('stat')
+        .where('stat.token_id = :tokenId', { tokenId: token.id })
+        .andWhere('DATE(stat.date) = :date', { date: todayStr })
+        .getOne();
+
+      if (existingStat) {
+        // Update existing record
+        existingStat.apy = yieldStat.apy;
+        existingStat.tvl = yieldStat.tvl;
+        existingStat.tvlUsd = yieldStat.tvlUsd;
+        await this.yieldStatRepo.save(existingStat);
+        this.logger.debug(`Updated yield stats for token ${token.id}`, {
+          apy: yieldStat.apy,
+          tvl: yieldStat.tvl,
+          tvlUsd: yieldStat.tvlUsd
+        });
+      } else {
+        // Insert new record
+        await this.yieldStatRepo.save(yieldStat);
+        this.logger.debug(`Created yield stats for token ${token.id}`, {
+          apy: yieldStat.apy,
+          tvl: yieldStat.tvl,
+          tvlUsd: yieldStat.tvlUsd
+        });
+      }
     } catch (error) {
       this.logger.error(`Failed to process yield stats for token ${token.id}`, error as Error);
       throw error;
