@@ -123,14 +123,13 @@ export class DailyStatsProcessor {
                 priceUsd: safeTokenPrice
             };
 
-            // 3. 使用事务保存数据
+            // 3. 使用upsert操作更新数据
             const result = await queryRunner.manager
-                .createQueryBuilder()
-                .insert()
-                .into(FactTokenDailyStat)
-                .values(statData)
-                .orUpdate(['volume', 'volume_usd', 'txns_count', 'price_usd'], ['token_id', 'date'])
-                .execute();
+                .getRepository(FactTokenDailyStat)
+                .upsert(statData, {
+                    conflictPaths: ['tokenId', 'date'],
+                    skipUpdateIfNoValuesChanged: true
+                });
 
             // 4. 验证写入结果
             if (!result.identifiers?.length) {
@@ -192,7 +191,24 @@ export class DailyStatsProcessor {
                 return sum + amount;
             }, 0);
 
-            const txns = events.length;
+            // 更新Redis计数器
+            const redisKey = `token:${token.address}:daily:txns:${today.toISOString().split('T')[0]}`;
+            let txns = events.length;
+            
+            try {
+                const redisClient = this.tokenService['redisClient'];
+                if (redisClient.isOpen) {
+                    // 获取当前计数
+                    const redisCount = await redisClient.get(redisKey);
+                    txns += redisCount ? parseInt(redisCount) : 0;
+                    // 更新计数器
+                    await redisClient.incrBy(redisKey, events.length);
+                    // 设置24小时过期
+                    await redisClient.expire(redisKey, 86400);
+                }
+            } catch (e) {
+                this.logger.warn('Failed to update Redis counter', e as Error);
+            }
 
             // 保存统计数据
             await this.processTokenStats(queryRunner, token, volume, txns, today);

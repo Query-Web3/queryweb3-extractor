@@ -30,6 +30,7 @@ export class WeeklyStatsProcessor {
             for (const token of tokens) {
                 try {
                     // 查询过去7天的日统计数据
+                    this.logger.debug(`Querying daily stats for token ${token.symbol} between ${weekStart.toISOString()} and ${today.toISOString()}`);
                     const dailyStats = await this.repository.dailyStatRepo
                         .createQueryBuilder('stat')
                         .where('stat.token_id = :tokenId', { tokenId: token.id })
@@ -38,10 +39,25 @@ export class WeeklyStatsProcessor {
                             end: today
                         })
                         .getMany();
+                    
+                    this.logger.debug(`Found ${dailyStats.length} daily stats records for aggregation`);
 
                     // 计算周统计
-                    const weeklyVolume = dailyStats.reduce((sum, stat) => sum + stat.volume, 0);
-                    const weeklyTxns = dailyStats.reduce((sum, stat) => sum + stat.txnsCount, 0);
+                    const weeklyVolume = dailyStats.reduce((sum, stat) => {
+                        if (!stat.volume) {
+                            this.logger.warn(`Missing volume in daily stat for token ${token.symbol} on ${stat.date}`);
+                            return sum;
+                        }
+                        return sum + stat.volume;
+                    }, 0);
+                    
+                    const weeklyTxns = dailyStats.reduce((sum, stat) => {
+                        if (!stat.txnsCount) {
+                            this.logger.warn(`Missing txnsCount in daily stat for token ${token.symbol} on ${stat.date}`);
+                            return sum;
+                        }
+                        return sum + stat.txnsCount;
+                    }, 0);
                     
                     // 计算平均价格，处理NaN情况
                     const avgPrice = dailyStats.length > 0 ? 

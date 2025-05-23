@@ -88,7 +88,8 @@ export class YearlyStatsProcessor {
 
                     await this.repository.yearlyStatRepo.upsert(yearlyStat, {
                         conflictPaths: ['tokenId', 'date'],
-                        skipUpdateIfNoValuesChanged: true
+                        skipUpdateIfNoValuesChanged: true,
+                        upsertType: 'on-conflict-do-update'
                     });
                 } catch (error) {
                     this.logger.error(`Error processing yearly stats for token ${token.symbol}`, error as Error);
