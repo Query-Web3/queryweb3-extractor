@@ -223,19 +223,19 @@ export async function transformData(batchLog?: BatchLog) {
                             const tokenStatsRepo = new TokenStatsRepository(dataSource);
                             
                             // Process daily stats first
-                            const dailyStatsProcessor = new DailyStatsProcessor(tokenStatsRepo, logger);
+                            const dailyStatsProcessor = new DailyStatsProcessor(tokenStatsRepo, logger, tokenService);
                             await dailyStatsProcessor.processToken(token);
                             
                             // Then process weekly stats (aggregates daily)
-                            const weeklyStatsProcessor = new WeeklyStatsProcessor(tokenStatsRepo, logger);
+                            const weeklyStatsProcessor = new WeeklyStatsProcessor(tokenStatsRepo, logger, tokenService);
                             await weeklyStatsProcessor.processToken(token);
                             
                             // Then process monthly stats (aggregates weekly)
-                            const monthlyStatsProcessor = new MonthlyStatsProcessor(tokenStatsRepo, logger);
+                            const monthlyStatsProcessor = new MonthlyStatsProcessor(tokenStatsRepo, logger, tokenService);
                             await monthlyStatsProcessor.processToken(token);
                             
                             // Finally process yearly stats (aggregates monthly)
-                            const yearlyStatsProcessor = new YearlyStatsProcessor(tokenStatsRepo, logger);
+                            const yearlyStatsProcessor = new YearlyStatsProcessor(tokenStatsRepo, logger, tokenService);
                             await yearlyStatsProcessor.processToken(token);
                             
                             const yieldStatsProcessor = new YieldStatsProcessor(dataSource, logger);

@@ -2,9 +2,14 @@ import { TokenStatsRepository } from '../token/tokenStatsRepository';
 import { Logger, LogLevel } from '../../../utils/logger';
 import { getTokenPriceFromOracle } from '../utils';
 import { DimToken } from '../../../entities/DimToken';
+import { TokenService } from '../token/TokenService';
 
 export class WeeklyStatsProcessor {
-    constructor(private repository: TokenStatsRepository, private logger: Logger) {
+    constructor(
+        private repository: TokenStatsRepository, 
+        private logger: Logger,
+        private tokenService: TokenService
+    ) {
         this.logger.setLogLevel(process.env.LOG_LEVEL as LogLevel || LogLevel.INFO);
     }
 
@@ -149,7 +154,26 @@ export class WeeklyStatsProcessor {
                 return sum + amount;
             }, 0);
 
-            const weeklyTxns = weeklyEvents.length;
+            let weeklyTxns = weeklyEvents.length;
+            
+            try {
+                // 使用TokenService的Redis客户端
+                const redisClient = this.tokenService['redisClient'];
+                if (redisClient.isOpen) {
+                    const redisKey = `token:${token.address}:weekly:txns:${today.toISOString().split('T')[0]}`;
+                    // 从Redis获取当前计数
+                    const redisCount = await redisClient.get(redisKey);
+                    if (redisCount) {
+                        weeklyTxns += parseInt(redisCount);
+                    }
+                    // 更新Redis计数器
+                    await redisClient.incrBy(redisKey, weeklyEvents.length);
+                    // 设置7天过期
+                    await redisClient.expire(redisKey, 604800);
+                }
+            } catch (e) {
+                this.logger.warn('Failed to update Redis counter, using direct count only', e as Error);
+            }
 
             const tokenPrice = await getTokenPriceFromOracle(token.address) ?? 1.0;
             const safeTokenPrice = isFinite(tokenPrice) ? tokenPrice : 1.0;
@@ -200,14 +224,14 @@ export class WeeklyStatsProcessor {
             const weeklyStat = {
                 tokenId: tokenRecord.id,
                 date: today,
-                volume: weeklyVolume,
+                volume: isFinite(weeklyVolume) ? weeklyVolume : 0,
                 volumeUsd: isFinite(weeklyVolume * safeTokenPrice) ? weeklyVolume * safeTokenPrice : 0,
-                txnsCount: weeklyTxns,
+                txnsCount: isFinite(weeklyTxns) ? weeklyTxns : 0,
                 priceUsd: safeTokenPrice,
-                volumeYoy: volumeYoY,
-                volumeQoq: volumeQoQ,
-                txnsYoy: txnsYoY,
-                txnsQoq: txnsQoQ
+                volumeYoy: isFinite(volumeYoY) ? volumeYoY : 0,
+                volumeQoq: isFinite(volumeQoQ) ? volumeQoQ : 0,
+                txnsYoy: isFinite(txnsYoY) ? txnsYoY : 0,
+                txnsQoq: isFinite(txnsQoQ) ? txnsQoQ : 0
             };
 
             const result = await this.repository.weeklyStatRepo.upsert(weeklyStat, {

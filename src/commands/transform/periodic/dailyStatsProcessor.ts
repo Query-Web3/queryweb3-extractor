@@ -1,15 +1,16 @@
-import dotenv from 'dotenv';
 import { TokenStatsRepository } from '../token/tokenStatsRepository';
 import { Logger, LogLevel } from '../../../utils/logger';
-
-// 加载环境变量
-dotenv.config();
+import { TokenService } from '../token/TokenService';
 import { getTokenPriceFromOracle } from '../utils';
 import { DimToken } from '../../../entities/DimToken';
 import { FactTokenDailyStat } from '../../../entities/FactTokenDailyStat';
 
 export class DailyStatsProcessor {
-    constructor(private repository: TokenStatsRepository, private logger: Logger) {
+    constructor(
+        private repository: TokenStatsRepository, 
+        private logger: Logger,
+        private tokenService: TokenService
+    ) {
         this.logger.setLogLevel(process.env.LOG_LEVEL as LogLevel || LogLevel.INFO);
     }
 
@@ -25,7 +26,8 @@ export class DailyStatsProcessor {
             // 添加调试日志
             this.logger.debug('Querying daily events for date:', today.toISOString());
             
-            const dailyEvents = await this.repository.eventRepo.createQueryBuilder('event')
+            // 记录详细的查询SQL
+            const query = this.repository.eventRepo.createQueryBuilder('event')
                 .leftJoinAndSelect('event.block', 'block')
                 .where(`(
                     (event.section = 'Tokens' AND event.method = 'Transfer') OR
@@ -37,17 +39,30 @@ export class DailyStatsProcessor {
                 .andWhere('block.timestamp >= :start AND block.timestamp < :end', {
                     start: today,
                     end: new Date(today.getTime() + 24 * 60 * 60 * 1000)
-                })
-                .getMany();
-
-            // 记录查询结果
-            this.logger.debug(`Found ${dailyEvents.length} daily events`);
-            if (dailyEvents.length > 0) {
-                this.logger.debug('Sample event:', {
-                    section: dailyEvents[0].section,
-                    method: dailyEvents[0].method,
-                    data: dailyEvents[0].data
                 });
+            
+            this.logger.debug('Daily events query:', {
+                sql: query.getSql(),
+                parameters: query.getParameters()
+            });
+
+            const dailyEvents = await query.getMany();
+
+            // 记录详细的查询结果
+            this.logger.info(`Found ${dailyEvents.length} daily events`);
+            if (dailyEvents.length > 0) {
+                this.logger.debug('First 5 events:', dailyEvents.slice(0, 5).map(e => ({
+                    id: e.id,
+                    section: e.section,
+                    method: e.method,
+                    data: e.data,
+                    blockNumber: e.block?.number
+                })));
+            } else {
+                this.logger.warn('No daily events found for date:', today.toISOString());
+                // 检查是否有其他类型的事件
+                const allEventsCount = await this.repository.eventRepo.count();
+                this.logger.debug(`Total events in database: ${allEventsCount}`);
             }
 
             // 2. 按token分组计算日统计
@@ -230,7 +245,29 @@ export class DailyStatsProcessor {
                 return sum + amount;
             }, 0);
 
-            const dailyTxns = events.length;
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            
+            // 使用Redis计数器统计交易数
+            const redisKey = `token:${token.address}:daily:txns:${today.toISOString().split('T')[0]}`;
+            let dailyTxns = events.length;
+            
+            try {
+                const redisClient = this.tokenService['redisClient'];
+                if (redisClient.isOpen) {
+                    // 从Redis获取当前计数
+                    const redisCount = await redisClient.get(redisKey);
+                    if (redisCount) {
+                        dailyTxns += parseInt(redisCount);
+                    }
+                    // 更新Redis计数器
+                    await redisClient.incrBy(redisKey, events.length);
+                    // 设置24小时过期
+                    await redisClient.expire(redisKey, 86400);
+                }
+            } catch (e) {
+                this.logger.warn('Failed to update Redis counter, using direct count only', e as Error);
+            }
 
             // Get token price from oracle (use default 1.0 if not available or fails)
             // 获取token价格，处理异常情况
@@ -245,8 +282,6 @@ export class DailyStatsProcessor {
             }
             const safeTokenPrice = isNaN(tokenPrice) || !isFinite(tokenPrice) ? 1.0 : tokenPrice;
             
-            const today = new Date();
-            today.setHours(0, 0, 0, 0);
             const yesterday = new Date(today);
             yesterday.setDate(yesterday.getDate() - 1);
 

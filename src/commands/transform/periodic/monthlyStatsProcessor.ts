@@ -2,9 +2,14 @@ import { TokenStatsRepository } from '../token/tokenStatsRepository';
 import { Logger, LogLevel } from '../../../utils/logger';
 import { getTokenPriceFromOracle } from '../utils';
 import { DimToken } from '../../../entities/DimToken';
+import { TokenService } from '../token/TokenService';
 
 export class MonthlyStatsProcessor {
-    constructor(private repository: TokenStatsRepository, private logger: Logger) {
+    constructor(
+        private repository: TokenStatsRepository, 
+        private logger: Logger,
+        private tokenService: TokenService
+    ) {
         this.logger.setLogLevel(process.env.LOG_LEVEL as LogLevel || LogLevel.INFO);
     }
 
@@ -151,7 +156,26 @@ export class MonthlyStatsProcessor {
                 return sum + (isFinite(amount) ? amount : 0);
             }, 0);
 
-            const monthlyTxns = monthlyEvents.length;
+            // 使用Redis计数器统计月交易数
+            const redisKey = `token:${token.address}:monthly:txns:${today.toISOString().split('T')[0]}`;
+            let monthlyTxns = monthlyEvents.length;
+            
+            try {
+                const redisClient = this.tokenService['redisClient'];
+                if (redisClient.isOpen) {
+                    // 从Redis获取当前计数
+                    const redisCount = await redisClient.get(redisKey);
+                    if (redisCount) {
+                        monthlyTxns += parseInt(redisCount);
+                    }
+                    // 更新Redis计数器
+                    await redisClient.incrBy(redisKey, monthlyEvents.length);
+                    // 设置30天过期
+                    await redisClient.expire(redisKey, 2592000);
+                }
+            } catch (e) {
+                this.logger.warn('Failed to update Redis counter, using direct count only', e as Error);
+            }
 
             // Get token price from oracle (use default 1.0 if not available)
             const tokenPrice = await getTokenPriceFromOracle(token.address) ?? 1.0;
