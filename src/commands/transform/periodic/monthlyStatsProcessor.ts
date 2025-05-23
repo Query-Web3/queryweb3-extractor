@@ -39,14 +39,9 @@ export class MonthlyStatsProcessor {
                         })
                         .getMany();
 
-                    // 计算月统计
+                    // 计算月统计 - 直接从周统计数据累加，不需要字符串转换
                     const monthlyVolume = weeklyStats.reduce((sum, stat) => {
-                        let volume = 0;
-                        if (stat.volume !== null && stat.volume !== undefined) {
-                            const volumeStr = String(stat.volume);
-                            volume = parseFloat(volumeStr.replace(/[^\d.-]/g, ''));
-                        }
-                        return sum + (isFinite(volume) ? volume : 0);
+                        return sum + (stat.volume || 0);
                     }, 0);
                     const monthlyTxns = weeklyStats.reduce((sum, stat) => sum + stat.txnsCount, 0);
                     

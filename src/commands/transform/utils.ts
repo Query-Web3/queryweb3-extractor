@@ -180,10 +180,22 @@ export async function getTokenPriceFromOracle(tokenAddress: string): Promise<num
             extract: (data: any) => data.data?.ACA?.quote?.USD?.price
         },
         {
-            name: 'CoinGecko China Mirror',
-            url: 'https://api.coingecko.cn/api/v3/simple/price',
+            name: 'CoinGecko International',
+            url: 'https://api.coingecko.com/api/v3/simple/price',
             params: {ids: 'acala', vs_currencies: 'usd'},
             extract: (data: any) => data.acala?.usd
+        },
+        {
+            name: 'Binance API',
+            url: 'https://api.binance.com/api/v3/ticker/price',
+            params: {symbol: 'ACAUSDT'},
+            extract: (data: any) => data.price
+        },
+        {
+            name: 'OKX API',
+            url: 'https://www.okx.com/api/v5/market/ticker',
+            params: {instId: 'ACA-USDT'},
+            extract: (data: any) => data.data?.[0]?.last
         }
     ];
 
@@ -230,7 +242,29 @@ export async function getTokenPriceFromOracle(tokenAddress: string): Promise<num
 
     logger.error('All price source attempts failed');
     priceTimer.end();
-    console.log('[ACA Price] Using default price: $1.0000');
+    
+    // Try to get last cached price from Redis
+    try {
+        const redis = await getRedisClient();
+        const cachedPrice = await redis.sendCommand(['HGET', PRICE_CACHE_KEY, tokenAddress]);
+        if (cachedPrice && typeof cachedPrice === 'string') {
+            try {
+                const parsed = JSON.parse(cachedPrice);
+                if (parsed && typeof parsed.price === 'number') {
+                    const { price } = parsed;
+                    logger.warn(`Using expired Redis cached price for ${tokenAddress}: ${price}`);
+                    console.log(`[ACA Price] Using cached price: $${price.toFixed(4)} (expired)`);
+                    return price;
+                }
+            } catch (error) {
+                logger.warn('Failed to parse cached price', error);
+            }
+        }
+    } catch (error) {
+        logger.warn('Failed to check Redis price cache', error);
+    }
+
+    logger.warn('No cached price available, using default price: $1.0000');
     return 1.0; // Default fallback value
 }
 
