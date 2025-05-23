@@ -95,10 +95,17 @@ export class MonthlyStatsProcessor {
                         this.logger.warn(`Volume value ${monthlyVolume} was truncated to ${safeMonthlyVolume} for token ${token.symbol}`);
                     }
 
-                    await this.repository.monthlyStatRepo.upsert(monthlyStat, {
+                    this.logger.debug(`Upserting monthly stats for token ${token.symbol} on ${today.toISOString().split('T')[0]}`);
+                    const result = await this.repository.monthlyStatRepo.upsert(monthlyStat, {
                         conflictPaths: ['tokenId', 'date'],
-                        skipUpdateIfNoValuesChanged: true
+                        skipUpdateIfNoValuesChanged: true,
+                        upsertType: 'on-conflict-do-update'
                     });
+                    
+                    if (!result.identifiers?.length) {
+                        throw new Error(`Failed to upsert monthly stat record for ${token.symbol}`);
+                    }
+                    this.logger.debug(`Monthly stats ${result.identifiers[0]?.id ? 'updated' : 'inserted'} for token ${token.symbol}`);
                 } catch (error) {
                     this.logger.error(`Error processing monthly stats for token ${token.symbol}`, error as Error);
                     continue;

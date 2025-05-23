@@ -100,10 +100,17 @@ export class WeeklyStatsProcessor {
                         txnsYoy: txnsYoY
                     };
 
-                    await this.repository.weeklyStatRepo.upsert(weeklyStat, {
+                    this.logger.debug(`Upserting weekly stats for token ${token.symbol} on ${today.toISOString().split('T')[0]}`);
+                    const result = await this.repository.weeklyStatRepo.upsert(weeklyStat, {
                         conflictPaths: ['tokenId', 'date'],
-                        skipUpdateIfNoValuesChanged: true
+                        skipUpdateIfNoValuesChanged: true,
+                        upsertType: 'on-conflict-do-update'
                     });
+                    
+                    if (!result.identifiers?.length) {
+                        throw new Error(`Failed to upsert weekly stat record for ${token.symbol}`);
+                    }
+                    this.logger.debug(`Weekly stats ${result.identifiers[0]?.id ? 'updated' : 'inserted'} for token ${token.symbol}`);
                 } catch (error) {
                     this.logger.error(`Error processing weekly stats for token ${token.symbol}`, error as Error);
                     continue;

@@ -123,18 +123,21 @@ export class DailyStatsProcessor {
                 priceUsd: safeTokenPrice
             };
 
-            // 3. 使用upsert操作更新数据
-            const result = await queryRunner.manager
-                .getRepository(FactTokenDailyStat)
-                .upsert(statData, {
-                    conflictPaths: ['tokenId', 'date'],
-                    skipUpdateIfNoValuesChanged: true
-                });
+                    // 3. 使用upsert操作更新数据(确保不删除重建)
+                    this.logger.debug(`Upserting daily stats for token ${token.symbol} on ${date.toISOString().split('T')[0]}`);
+                    const result = await queryRunner.manager
+                        .getRepository(FactTokenDailyStat)
+                        .upsert(statData, {
+                            conflictPaths: ['tokenId', 'date'],
+                            skipUpdateIfNoValuesChanged: true,
+                            upsertType: 'on-conflict-do-update'
+                        });
 
-            // 4. 验证写入结果
-            if (!result.identifiers?.length) {
-                throw new Error(`Failed to save daily stats for token ${token.symbol}`);
-            }
+                    // 4. 验证写入结果
+                    if (!result.identifiers?.length) {
+                        throw new Error(`Failed to save daily stats for token ${token.symbol}`);
+                    }
+                    this.logger.debug(`Daily stats ${result.identifiers[0]?.id ? 'updated' : 'inserted'} for token ${token.symbol}`);
 
             return true;
         } catch (error) {

@@ -86,11 +86,17 @@ export class YearlyStatsProcessor {
                         txnsYoy: txnsYoY
                     };
 
-                    await this.repository.yearlyStatRepo.upsert(yearlyStat, {
+                    this.logger.debug(`Upserting yearly stats for token ${token.symbol} on ${today.toISOString().split('T')[0]}`);
+                    const result = await this.repository.yearlyStatRepo.upsert(yearlyStat, {
                         conflictPaths: ['tokenId', 'date'],
                         skipUpdateIfNoValuesChanged: true,
                         upsertType: 'on-conflict-do-update'
                     });
+                    
+                    if (!result.identifiers?.length) {
+                        throw new Error(`Failed to upsert yearly stat record for ${token.symbol}`);
+                    }
+                    this.logger.debug(`Yearly stats ${result.identifiers[0]?.id ? 'updated' : 'inserted'} for token ${token.symbol}`);
                 } catch (error) {
                     this.logger.error(`Error processing yearly stats for token ${token.symbol}`, error as Error);
                     continue;
