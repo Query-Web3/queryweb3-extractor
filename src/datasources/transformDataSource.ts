@@ -5,6 +5,7 @@ import { DimAssetType } from '../entities/DimAssetType';
 import { DimReturnType } from '../entities/DimReturnType';
 import { DimToken } from '../entities/DimToken';
 import { DimStatCycle } from '../entities/DimStatCycle';
+import { BatchLog } from '../entities/BatchLog';
 import { FactTokenDailyStat } from '../entities/FactTokenDailyStat';
 import { FactTokenMonthlyStat } from '../entities/FactTokenMonthlyStat';
 import { FactTokenWeeklyStat } from '../entities/FactTokenWeeklyStat';
@@ -44,7 +45,8 @@ export const transformDataSource = new DataSource({
     FactYieldStat,
     AcalaExtrinsic,
     AcalaBlock,
-    AcalaEvent
+    AcalaEvent,
+    BatchLog
   ],
   synchronize: false,
   logging: process.env.NODE_ENV === 'development',

@@ -1,4 +1,4 @@
-import { BatchLog, BatchStatus, BatchType } from '../../entities/BatchLog';
+import { BatchLog, BatchStatus, BatchType, LockStatus } from '../../entities/BatchLog';
 import { showLastBatchLog, pauseBatch, resumeBatch } from '../common/batchLog';
 import { AcalaBlock } from '../../entities/acala/AcalaBlock';
 import { DimToken } from '../../entities/DimToken';
@@ -24,16 +24,39 @@ import { Logger, LogLevel } from '../../utils/logger';
 export async function transformData(batchLog?: BatchLog) {
     const logger = Logger.getInstance();
     logger.setLogLevel(process.env.LOG_LEVEL as LogLevel || LogLevel.DEBUG);
+    const TRANSFORM_INTERVAL_MS = process.env.TRANSFORM_INTERVAL_MS ? Number(process.env.TRANSFORM_INTERVAL_MS) : 3600000;
+    const LOCK_KEY = 'transform_data_lock';
 
     if (!batchLog) {
-        batchLog = new BatchLog();
-        batchLog.id = 0;
-        batchLog.batchId = 'cli-' + Date.now();
-        batchLog.type = BatchType.TRANSFORM;
-        batchLog.status = BatchStatus.RUNNING;
-        batchLog.startTime = new Date();
-        batchLog.retryCount = 0;
-        batchLog.processed_block_count = 0;
+        const dataSource = await initializeDataSource();
+        const batchLogRepo = dataSource.getRepository(BatchLog);
+        
+        // Check existing lock
+        const existingLock = await batchLogRepo.findOne({
+            where: { lockKey: LOCK_KEY }
+        });
+
+        if (existingLock) {
+            const lockTime = existingLock.lockTime?.getTime() || 0;
+            const currentTime = Date.now();
+            if (currentTime - lockTime < TRANSFORM_INTERVAL_MS) {
+                logger.info(`Transform data is locked until ${new Date(lockTime + TRANSFORM_INTERVAL_MS)}`);
+                return;
+            }
+        }
+
+        batchLog = await batchLogRepo.save(batchLogRepo.create({
+            batchId: 'cli-' + Date.now(),
+            startTime: new Date(),
+            status: BatchStatus.RUNNING,
+            type: BatchType.TRANSFORM,
+            retryCount: 0,
+            processed_block_count: 0,
+            last_processed_height: null,
+            lockKey: LOCK_KEY,
+            lockTime: new Date(),
+            lockStatus: LockStatus.LOCKED
+        }));
     }
     logger.setBatchLog(batchLog);
 
@@ -326,7 +349,28 @@ export async function transformData(batchLog?: BatchLog) {
         }
     } catch (e) {
         logger.error('Transform failed', e as Error);
+        
+        // Update batch log with error status
+        const dataSource = await initializeDataSource();
+        const batchLogRepo = dataSource.getRepository(BatchLog);
+        await batchLogRepo.update(batchLog.id, {
+            status: BatchStatus.FAILED,
+            endTime: new Date(),
+            lockStatus: LockStatus.FAILED
+        });
+        
         throw e;
+    } finally {
+        // Release lock if batch completed successfully
+        if (batchLog && batchLog.status === BatchStatus.RUNNING) {
+            const dataSource = await initializeDataSource();
+            const batchLogRepo = dataSource.getRepository(BatchLog);
+            await batchLogRepo.update(batchLog.id, {
+                status: BatchStatus.COMPLETED,
+                endTime: new Date(),
+                lockStatus: LockStatus.UNLOCKED
+            });
+        }
     }
 }
 
