@@ -1,5 +1,4 @@
 import { DataSource } from 'typeorm';
-import { Not, IsNull } from 'typeorm';
 import { AcalaBlock } from '../../../entities/acala/AcalaBlock';
 import { AcalaExtrinsic } from '../../../entities/acala/AcalaExtrinsic';
 import { AcalaEvent } from '../../../entities/acala/AcalaEvent';
@@ -31,10 +30,10 @@ export class BlockProcessor {
 
     async processAcalaBlocks(tokenIds: Set<string>) {
         const blockRepo = this.dataSource.getRepository(AcalaBlock);
-        const acalaBlocks = await blockRepo.find({
-            where: { acalaData: Not(IsNull()) },
-            order: { number: 'ASC' }
-        });
+        const acalaBlocks = await blockRepo.createQueryBuilder('block')
+            .where('block.acalaData IS NOT NULL')
+            .orderBy('block.number', 'ASC')
+            .getMany();
 
         if (acalaBlocks.length > 0) {
             const acalaTimer = this.logger.time('Process Acala block data');
@@ -81,28 +80,28 @@ export class BlockProcessor {
                 .getMany();
 
             for (const extrinsic of extrinsics) {
-                    try {
-                        const method = extrinsic.method;
-                        const params = extrinsic.params as any;
-                        
-                        if (method.startsWith('tokens.') && params?.currencyId) {
-                            tokenIds.add(params.currencyId);
-                        } else if (method.startsWith('dex.') && params?.path) {
-                            for (const currencyId of params.path) {
-                                tokenIds.add(currencyId);
-                            }
-                        } else if (method.startsWith('homa.')) {
-                            tokenIds.add('ACA');
+                try {
+                    const method = extrinsic.method;
+                    const params = extrinsic.params as any;
+                    
+                    if (method.startsWith('tokens.') && params?.currencyId) {
+                        tokenIds.add(params.currencyId);
+                    } else if (method.startsWith('dex.') && params?.path) {
+                        for (const currencyId of params.path) {
+                            tokenIds.add(currencyId);
                         }
-                        this.logger.recordSuccess();
-                    } catch (e) {
-                        this.logger.error(`Failed to process extrinsic`, e as Error, {
-                            extrinsicId: extrinsic.id,
-                            method: extrinsic.method,
-                            params: extrinsic.params
-                        });
-                        this.logger.recordError();
+                    } else if (method.startsWith('homa.')) {
+                        tokenIds.add('ACA');
                     }
+                    this.logger.recordSuccess();
+                } catch (e) {
+                    this.logger.error(`Failed to process extrinsic`, e as Error, {
+                        extrinsicId: extrinsic.id,
+                        method: extrinsic.method,
+                        params: extrinsic.params
+                    });
+                    this.logger.recordError();
+                }
             }
         } finally {
             processTimer.end();
