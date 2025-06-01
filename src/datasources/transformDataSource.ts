@@ -50,12 +50,14 @@ export const transformDataSource = new DataSource({
   ],
   synchronize: false,
   logging: process.env.NODE_ENV === 'development',
-  poolSize: 10,
+  poolSize: 5,  // 减少连接池大小以避免资源竞争
   extra: {
-    connectionLimit: 15,
-    idleTimeout: 30000,
-    connectTimeout: 30000,
-    acquireTimeout: 30000
+    connectionLimit: 10,
+    idleTimeout: 60000,  // 延长空闲超时
+    connectTimeout: 60000,  // 延长连接超时
+    acquireTimeout: 60000,  // 延长获取连接超时
+    enableKeepAlive: true,  // 启用保活
+    keepAliveInitialDelay: 30000  // 保活间隔
   },
   migrations: [],
   subscribers: [],

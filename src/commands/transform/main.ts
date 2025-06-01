@@ -1,10 +1,8 @@
 import { BatchLog, BatchStatus, BatchType, LockStatus } from '../../entities/BatchLog';
 import { showLastBatchLog, pauseBatch, resumeBatch } from '../common/batchLog';
-import { AcalaBlock } from '../../entities/acala/AcalaBlock';
 import { DimToken } from '../../entities/DimToken';
-import { Not, IsNull } from 'typeorm';
-import { AcalaExtrinsic } from '../../entities/acala/AcalaExtrinsic';
-import { AcalaEvent } from '../../entities/acala/AcalaEvent';
+import { BlockProcessor } from './block/blockProcessor';
+import { BatchProcessor } from './batch/batchProcessor';
 import { initializeDataSource } from './dataSource';
 import { TokenService } from './token/TokenService';
 import { TokenRepository } from './token/TokenRepository';
@@ -27,36 +25,26 @@ export async function transformData(batchLog?: BatchLog) {
     const TRANSFORM_INTERVAL_MS = process.env.TRANSFORM_INTERVAL_MS ? Number(process.env.TRANSFORM_INTERVAL_MS) : 3600000;
     const LOCK_KEY = 'transform_data_lock';
 
-    if (!batchLog) {
-        const dataSource = await initializeDataSource();
-        const batchLogRepo = dataSource.getRepository(BatchLog);
-        
-        // Check existing lock
-        const existingLock = await batchLogRepo.findOne({
-            where: { lockKey: LOCK_KEY }
-        });
-
-        if (existingLock) {
-            const lockTime = existingLock.lockTime?.getTime() || 0;
-            const currentTime = Date.now();
-            if (currentTime - lockTime < TRANSFORM_INTERVAL_MS) {
-                logger.info(`Transform data is locked until ${new Date(lockTime + TRANSFORM_INTERVAL_MS)}`);
-                return;
-            }
+    // Initialize data source once and reuse
+    let dataSource: DataSource;
+    try {
+        dataSource = await initializeDataSource();
+        if (!dataSource.isInitialized) {
+            logger.info('Initializing database connection...');
+            await dataSource.initialize();
+            logger.info('Database connection established');
         }
+    } catch (err) {
+        logger.error('Failed to initialize data source', err as Error);
+        throw err;
+    }
 
-        batchLog = await batchLogRepo.save(batchLogRepo.create({
-            batchId: 'cli-' + Date.now(),
-            startTime: new Date(),
-            status: BatchStatus.RUNNING,
-            type: BatchType.TRANSFORM,
-            retryCount: 0,
-            processed_block_count: 0,
-            last_processed_height: null,
-            lockKey: LOCK_KEY,
-            lockTime: new Date(),
-            lockStatus: LockStatus.LOCKED
-        }));
+    const batchProcessor = new BatchProcessor(dataSource, logger);
+    if (!batchLog) {
+        batchLog = await batchProcessor.checkAndCreateBatchLog(LOCK_KEY, TRANSFORM_INTERVAL_MS);
+        if (!batchLog) {
+            return; // Lock is active
+        }
     }
     logger.setBatchLog(batchLog);
 
@@ -64,158 +52,38 @@ export async function transformData(batchLog?: BatchLog) {
     
     try {
         const initTimer = logger.time('Initialize data source');
-        logger.info('Initializing data source...');
-        const dataSource = await initializeDataSource();
-        logger.info('Data source initialized successfully');
-        
-        if (!dataSource.isInitialized) {
-            logger.info('Initializing database connection...');
-            await dataSource.initialize();
-        }
-        logger.info('Database connection established');
+        logger.info('Using pre-initialized data source');
         initTimer.end();
 
+            // Ensure data source is connected before starting transaction
+            if (!dataSource.isInitialized) {
+                logger.info('Reinitializing data source before transaction...');
+                await dataSource.initialize();
+            }
+            
             const queryRunner = dataSource.createQueryRunner();
             const transactionTimer = logger.time('Database transaction');
-            await queryRunner.connect();
-            await queryRunner.startTransaction();
+            
+            try {
+                await queryRunner.connect();
+                await queryRunner.startTransaction();
+            } catch (err) {
+                logger.error('Failed to start transaction', err as Error);
+                // Try reconnecting data source and retry
+                logger.info('Attempting to reconnect data source...');
+                await dataSource.initialize();
+                await queryRunner.connect();
+                await queryRunner.startTransaction();
+            }
         
         try {
-            const blockTimer = logger.time('Query latest block');
-            const blockRepo = dataSource.getRepository(AcalaBlock);
-            logger.info('Querying latest block...');
-            const latestBlock = await blockRepo.findOne({ 
-                where: {},
-                order: { number: 'DESC' }
-            });
-            
-            if (!latestBlock) {
-                throw new Error('No blocks found in acala_block table');
-            }
-            
-            logger.info(`Processing latest block #${latestBlock.number} (batchId: ${latestBlock.batchId})`);
-            blockTimer.end();
-
-            // Batch collect all token IDs that need processing (including from Acala data)
+            const blockProcessor = new BlockProcessor(dataSource, logger);
+            const latestBlock = await blockProcessor.getLatestBlock();
             const tokenIds = new Set<string>();
-
-            // Process all blocks with acalaData
-            const acalaBlocks = await blockRepo.find({
-                where: { acalaData: Not(IsNull()) },
-                order: { number: 'ASC' }
-            });
-
-            if (acalaBlocks.length > 0) {
-                const acalaTimer = logger.time('Process Acala block data');
-                try {
-                    logger.info(`Found ${acalaBlocks.length} blocks with Acala data`);
-                    
-                    for (const block of acalaBlocks) {
-                        try {
-                            const acalaData = block.acalaData;
-                            if (acalaData?.events) {
-                                for (const event of acalaData.events) {
-                                    if (event?.currencyId) {
-                                        tokenIds.add(event.currencyId);
-                                    }
-                                }
-                            }
-                            logger.recordSuccess();
-                        } catch (e) {
-                            logger.error(`Failed to process Acala data for block #${block.number}`, e as Error);
-                            logger.recordError();
-                        }
-                    }
-                } finally {
-                    acalaTimer.end();
-                }
-            }
-
             
-            // Process extrinsics
-            const methodsToProcess = [
-                'tokens.transfer',
-                'dex.swapWithExactSupply',
-                'dex.swapWithExactTarget',
-                'homa.mint',
-                'homa.requestRedeem'
-            ];
-
-            const processTimer = logger.time('Process extrinsics');
-            try {
-                const extrinsics = await dataSource.getRepository(AcalaExtrinsic)
-                    .createQueryBuilder('extrinsic')
-                    .where('extrinsic.method IN (:...methods)', { methods: methodsToProcess })
-                    .groupBy('extrinsic.params')
-                    .getMany();
-
-                for (const extrinsic of extrinsics) {
-                        try {
-                            const method = extrinsic.method;
-                            const params = extrinsic.params as any;
-                            
-                            if (method.startsWith('tokens.') && params?.currencyId) {
-                                tokenIds.add(params.currencyId);
-                            } else if (method.startsWith('dex.') && params?.path) {
-                                for (const currencyId of params.path) {
-                                    tokenIds.add(currencyId);
-                                }
-                            } else if (method.startsWith('homa.')) {
-                                tokenIds.add('ACA');
-                            }
-                            logger.recordSuccess();
-                        } catch (e) {
-                            logger.error(`Failed to process extrinsic`, e as Error, {
-                                extrinsicId: extrinsic.id,
-                                method: extrinsic.method,
-                                params: extrinsic.params
-                            });
-                            logger.recordError();
-                        }
-                }
-            } finally {
-                processTimer.end();
-            }
-
-            // Process events
-            const eventPatterns = [
-                { section: 'tokens', method: 'transfer' },
-                { section: 'dex', method: 'swap' },
-                { section: 'homa', method: 'minted' },
-                { section: 'homa', method: 'redeemed' },
-                { section: 'rewards', method: 'reward' }
-            ];
-
-            const eventTimer = logger.time('Process events');
-            try {
-                const events = await dataSource.getRepository(AcalaEvent)
-                    .createQueryBuilder('event')
-                    .where('LOWER(event.section) IN (:...sections) AND LOWER(event.method) IN (:...methods)', {
-                        sections: eventPatterns.map(p => p.section.toLowerCase()),
-                        methods: eventPatterns.map(p => p.method.toLowerCase())
-                    })
-                    .getMany();
-
-                for (const event of events) {
-                    try {
-                        const data = event.data as any;
-                        if (data?.currencyId) {
-                            tokenIds.add(data.currencyId);
-                        }
-                        logger.recordSuccess();
-                    } catch (e) {
-                        logger.error(`Failed to process event`, e as Error, {
-                            eventId: event.id,
-                            section: event.section,
-                            method: event.method,
-                            data: event.data
-                        });
-                        logger.recordError();
-                    }
-                }
-            } finally {
-                eventTimer.end();
-            }
+            await blockProcessor.processAcalaBlocks(tokenIds);
+            await blockProcessor.processExtrinsics(tokenIds);
+            await blockProcessor.processEvents(tokenIds);
 
             // Unified processing of tokens and stats
             if (tokenIds.size > 0) {
@@ -273,7 +141,7 @@ export async function transformData(batchLog?: BatchLog) {
 
                     // Validate data consistency
                     const tokenCount = await dataSource.getRepository(DimToken).count();
-                    const blockCount = await blockRepo.count();
+                    const blockCount = await blockProcessor.getBlockRepo().count();
                     
                     if (tokenCount === 0) {
                         logger.warn('No tokens found in DimToken table');
@@ -306,7 +174,7 @@ export async function transformData(batchLog?: BatchLog) {
             const metrics = logger.getMetrics();
             logger.debug('Metrics durations:', metrics.durations); // 调试输出
             const finalTokenCount = await dataSource.getRepository(DimToken).count();
-            const finalBlockCount = await blockRepo.count();
+            const finalBlockCount = await blockProcessor.getBlockRepo().count();
             logger.info(`Data transformation completed. Stats: ${finalTokenCount} tokens, ${finalBlockCount} blocks processed`);
             // Format all durations with proper indentation
             const durationsStr = Object.entries(metrics.durations)
@@ -350,26 +218,12 @@ export async function transformData(batchLog?: BatchLog) {
     } catch (e) {
         logger.error('Transform failed', e as Error);
         
-        // Update batch log with error status
-        const dataSource = await initializeDataSource();
-        const batchLogRepo = dataSource.getRepository(BatchLog);
-        await batchLogRepo.update(batchLog.id, {
-            status: BatchStatus.FAILED,
-            endTime: new Date(),
-            lockStatus: LockStatus.FAILED
-        });
+        await batchProcessor.updateBatchLogOnError(batchLog);
         
         throw e;
     } finally {
-        // Release lock if batch completed successfully
         if (batchLog && batchLog.status === BatchStatus.RUNNING) {
-            const dataSource = await initializeDataSource();
-            const batchLogRepo = dataSource.getRepository(BatchLog);
-            await batchLogRepo.update(batchLog.id, {
-                status: BatchStatus.COMPLETED,
-                endTime: new Date(),
-                lockStatus: LockStatus.UNLOCKED
-            });
+            await batchProcessor.finalizeBatchLog(batchLog);
         }
     }
 }

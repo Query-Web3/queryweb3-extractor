@@ -1,0 +1,120 @@
+import { DataSource } from 'typeorm';
+import { BatchLog, BatchStatus, BatchType, LockStatus } from '../../../entities/BatchLog';
+import { Logger } from '../../../utils/logger';
+
+export class BatchProcessor {
+    constructor(
+        private dataSource: DataSource,
+        private logger: Logger
+    ) {}
+
+    async checkAndCreateBatchLog(lockKey: string, transformIntervalMs: number): Promise<BatchLog | undefined> {
+        const batchLogRepo = this.dataSource.getRepository(BatchLog);
+        
+        // Check existing lock
+        const existingLock = await batchLogRepo.findOne({
+            where: { lockKey }
+        });
+
+        if (existingLock) {
+            const lockTime = existingLock.lockTime?.getTime() || 0;
+            const currentTime = Date.now();
+            if (currentTime - lockTime < transformIntervalMs) {
+                this.logger.info(`Transform data is locked until ${new Date(lockTime + transformIntervalMs)}`);
+                return undefined;
+            }
+        }
+
+        return await batchLogRepo.save(batchLogRepo.create({
+            batchId: 'cli-' + Date.now(),
+            startTime: new Date(),
+            status: BatchStatus.RUNNING,
+            type: BatchType.TRANSFORM,
+            retryCount: 0,
+            processed_block_count: 0,
+            last_processed_height: null,
+            lockKey,
+            lockTime: new Date(),
+            lockStatus: LockStatus.LOCKED
+        }));
+    }
+
+    async updateBatchLogOnError(batchLog: BatchLog) {
+        try {
+            const batchLogRepo = this.dataSource.getRepository(BatchLog);
+            await batchLogRepo.update(batchLog.id, {
+                status: BatchStatus.FAILED,
+                endTime: new Date(),
+                lockStatus: LockStatus.FAILED
+            });
+        } catch (err) {
+            this.logger.error('Failed to update batch log with error status', err as Error);
+            throw err;
+        }
+    }
+
+    async finalizeBatchLog(batchLog: BatchLog) {
+        const finalStatus = {
+            status: BatchStatus.COMPLETED,
+            endTime: new Date().toISOString(),
+            lockStatus: LockStatus.UNLOCKED
+        };
+
+        // First try to update via database
+        try {
+            this.logger.info('Attempting database status update...');
+            const finalDataSource = new DataSource({
+                type: 'mysql',
+                host: process.env.TRANSFORM_DB_HOST,
+                port: parseInt(process.env.TRANSFORM_DB_PORT || '3306'),
+                username: process.env.TRANSFORM_DB_USER,
+                password: process.env.TRANSFORM_DB_PASSWORD,
+                database: process.env.TRANSFORM_DB_NAME,
+                entities: [BatchLog],
+                synchronize: false,
+                logging: false,
+                extra: {
+                    connectTimeout: 10000  // Shorter timeout for final update
+                }
+            });
+            
+            await finalDataSource.initialize();
+            const batchLogRepo = finalDataSource.getRepository(BatchLog);
+            await batchLogRepo.update(batchLog.id, finalStatus);
+            await finalDataSource.destroy();
+            this.logger.info('Database status update succeeded');
+        } catch (dbErr: unknown) {
+            const err = dbErr instanceof Error ? dbErr : new Error(String(dbErr));
+            this.logger.error('Database status update failed, falling back to file', err);
+            
+            // Fallback to file system
+            try {
+                const statusFile = `/tmp/batch_${batchLog.batchId}_status.json`;
+                const fs = require('fs');
+                fs.writeFileSync(statusFile, JSON.stringify({
+                    batchId: batchLog.batchId,
+                    ...finalStatus,
+                    error: 'Database update failed',
+                    dbError: err.message || 'Unknown error'
+                }));
+                this.logger.info(`Status saved to file: ${statusFile}`);
+            } catch (fileErr: unknown) {
+                const err = fileErr instanceof Error ? fileErr : new Error(String(fileErr));
+                this.logger.error('CRITICAL: Failed to save status to file', err);
+            }
+        }
+
+        // If file exists but DB succeeded, clean it up
+        try {
+            const statusFile = `/tmp/batch_${batchLog.batchId}_status.json`;
+            const fs = require('fs');
+            if (fs.existsSync(statusFile)) {
+                fs.unlinkSync(statusFile);
+                this.logger.info('Cleaned up status file');
+            }
+        } catch (cleanupErr: unknown) {
+            const err = cleanupErr instanceof Error ? cleanupErr : new Error(String(cleanupErr));
+            this.logger.warn('Failed to clean up status file', err);
+        }
+    }
+}
