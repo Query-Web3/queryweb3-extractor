@@ -64,27 +64,62 @@ async function initAcalaApi() {
     }
 }
 
-// Get token price from Acala Swap
-async function getPriceFromAcalaSwap(): Promise<number | null> {
+// Get token price from Acala Swap or Oracle
+async function getTokenPrice(tokenAddress: string): Promise<number | null> {
     const logger = Logger.getInstance();
     try {
         const api = await initAcalaApi();
         if (!api) return null;
+
+        // Check if token is ACA or AUSD
+        if (tokenAddress === 'ACA') {
+            // Get ACA/AUSD price from DEX
+            const result = await api.query.dex.liquidityPool([
+                { token: 'ACA' }, 
+                { token: 'AUSD' }
+            ]);
+            const [acaAmount, ausdAmount] = result.toJSON() as [string, string];
+            if (!acaAmount || !ausdAmount) return null;
+            return Number(ausdAmount) / Number(acaAmount);
+        } 
+        else if (tokenAddress === 'AUSD') {
+            return 1.0; // AUSD is stablecoin pegged to 1 USD
+        }
+        else {
+            // For other tokens, try to get price from oracle
+            try {
+                const oraclePrice = await api.query.oracle.values(tokenAddress);
+                if (oraclePrice) {
+                    const priceData = oraclePrice.toJSON();
+                    if (priceData && typeof priceData === 'object' && 'price' in priceData) {
+                        const priceValue = Number(priceData.price);
+                        if (!isNaN(priceValue)) {
+                            return priceValue;
+                        }
+                    }
+                }
+            } catch (error) {
+                logger.warn(`Failed to get oracle price for ${tokenAddress}`, error);
+            }
+            
+            // Fallback to DEX if available
+            try {
+                const result = await api.query.dex.liquidityPool([
+                    { token: tokenAddress },
+                    { token: 'AUSD' }
+                ]);
+                const [tokenAmount, ausdAmount] = result.toJSON() as [string, string];
+                if (tokenAmount && ausdAmount) {
+                    return Number(ausdAmount) / Number(tokenAmount);
+                }
+            } catch (error) {
+                logger.warn(`Failed to get DEX price for ${tokenAddress}`, error);
+            }
+        }
         
-        // Query the dex module for ACA/AUSD price using token symbols directly
-        const result = await api.query.dex.liquidityPool([
-            { token: 'ACA' }, 
-            { token: 'AUSD' }
-        ]);
-        const [acaAmount, ausdAmount] = result.toJSON() as [string, string];
-        
-        if (!acaAmount || !ausdAmount) return null;
-        
-        const price = Number(ausdAmount) / Number(acaAmount);
-        logger.debug(`Got price from Acala Swap: ${price}`);
-        return price;
+        return null;
     } catch (error) {
-        logger.warn('Failed to get price from Acala Swap', error);
+        logger.warn(`Failed to get price for ${tokenAddress}`, error);
         return null;
     }
 }
@@ -94,7 +129,7 @@ export async function getTokenPriceFromOracle(tokenAddress: string): Promise<num
     const logger = Logger.getInstance();
     logger.setLogLevel(process.env.LOG_LEVEL as LogLevel || LogLevel.INFO);
     
-    const priceTimer = logger.time('Get token price');
+    const priceTimer = logger.time(`Get price for ${tokenAddress}`);
     
     // Check Redis cache first
     try {
@@ -119,11 +154,11 @@ export async function getTokenPriceFromOracle(tokenAddress: string): Promise<num
         logger.warn('Failed to check Redis price cache', error);
     }
 
-    // Try Acala Swap first
-    const acalaPrice = await getPriceFromAcalaSwap();
-    if (acalaPrice) {
-        logger.debug(`Using Acala Swap price: ${acalaPrice}`);
-        console.log(`[ACA Price] Current price: $${acalaPrice.toFixed(8)} (from Acala Swap)`);
+    // Try to get price from Acala network first
+    const tokenPrice = await getTokenPrice(tokenAddress);
+    if (tokenPrice !== null) {
+        logger.debug(`Got price for ${tokenAddress} from Acala: ${tokenPrice}`);
+        console.log(`[${tokenAddress} Price] Current price: $${tokenPrice.toFixed(8)} (from Acala)`);
         // Update Redis cache
         try {
             const redis = await getRedisClient();
@@ -131,17 +166,23 @@ export async function getTokenPriceFromOracle(tokenAddress: string): Promise<num
                 'HSET', 
                 PRICE_CACHE_KEY, 
                 tokenAddress,
-                JSON.stringify({price: acalaPrice, timestamp: Date.now()})
+                JSON.stringify({price: tokenPrice, timestamp: Date.now()})
             ]);
             await redis.sendCommand(['EXPIRE', PRICE_CACHE_KEY, CACHE_TTL.toString()]);
         } catch (error) {
             logger.warn('Failed to update Redis price cache', error);
         }
         priceTimer.end();
-        return acalaPrice;
+        return tokenPrice;
     }
 
-    // Wait for WebSocket price with timeout
+    // For non-ACA tokens, fallback to external APIs
+    if (tokenAddress !== 'ACA') {
+        priceTimer.end();
+        return 1.0; // Default fallback for unknown tokens
+    }
+
+    // For ACA token, use existing fallback logic
     if (!binancePrice || Date.now() - lastBinanceUpdate >= 30000) {
         logger.debug('Waiting for fresh WebSocket price...');
         try {
@@ -176,8 +217,8 @@ export async function getTokenPriceFromOracle(tokenAddress: string): Promise<num
         {
             name: 'CoinMarketCap China',
             url: 'https://web-api.coinmarketcap.cn/v1/cryptocurrency/quotes/latest',
-            params: {symbol: 'ACA', convert: 'USD'},
-            extract: (data: any) => data.data?.ACA?.quote?.USD?.price
+            params: {symbol: tokenAddress, convert: 'USD'},
+            extract: (data: any) => data.data?.[tokenAddress]?.quote?.USD?.price
         },
         {
             name: 'CoinGecko International',
