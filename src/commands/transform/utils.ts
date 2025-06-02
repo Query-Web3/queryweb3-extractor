@@ -88,18 +88,40 @@ async function getTokenPrice(tokenAddress: string): Promise<number | null> {
         else {
             // For other tokens, try to get price from oracle
             try {
+                if (!tokenAddress || typeof tokenAddress !== 'string') {
+                    logger.warn(`Invalid token address: ${tokenAddress}`);
+                    return null;
+                }
+
+                // Check if token is supported by Acala
+                if (tokenAddress.startsWith('ForeignAsset-') || tokenAddress.startsWith('Token-')) {
+                    logger.debug(`Unsupported token type detected (${tokenAddress}), using ACA price as fallback`);
+                    const acaPrice = await getTokenPrice('ACA');
+                    return acaPrice ?? 1.0; // Fallback to 1.0 if ACA price not available
+                }
+                
                 const oraclePrice = await api.query.oracle.values(tokenAddress);
-                if (oraclePrice) {
-                    const priceData = oraclePrice.toJSON();
-                    if (priceData && typeof priceData === 'object' && 'price' in priceData) {
-                        const priceValue = Number(priceData.price);
-                        if (!isNaN(priceValue)) {
-                            return priceValue;
-                        }
+                if (!oraclePrice || oraclePrice.isEmpty) {
+                    logger.debug(`No oracle price available for ${tokenAddress}`);
+                    return null;
+                }
+                
+                const priceData = oraclePrice.toJSON();
+                if (priceData && typeof priceData === 'object' && 'price' in priceData) {
+                    const priceValue = Number(priceData.price);
+                    if (!isNaN(priceValue)) {
+                        return priceValue;
                     }
                 }
+                logger.warn(`Invalid oracle price format for ${tokenAddress}`, priceData);
             } catch (error) {
                 logger.warn(`Failed to get oracle price for ${tokenAddress}`, error);
+                // For ForeignAsset errors, fallback to ACA price
+                if (tokenAddress.startsWith('ForeignAsset-')) {
+                    logger.debug(`Using ACA price as fallback for ${tokenAddress}`);
+                    const acaPrice = await getTokenPrice('ACA');
+                    return acaPrice ?? 1.0;
+                }
             }
             
             // Fallback to DEX if available

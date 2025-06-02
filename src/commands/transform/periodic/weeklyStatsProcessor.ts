@@ -33,7 +33,7 @@ export class WeeklyStatsProcessor {
                     this.logger.debug(`Querying daily stats for token ${token.symbol} between ${weekStart.toISOString()} and ${today.toISOString()}`);
                     const dailyStats = await this.repository.dailyStatRepo
                         .createQueryBuilder('stat')
-                        .where('stat.token_id = :tokenId', { tokenId: token.id })
+                        .where('stat.tokenId = :tokenId', { tokenId: token.id })
                         .andWhere('stat.date BETWEEN :start AND :end', {
                             start: weekStart,
                             end: today
@@ -43,7 +43,7 @@ export class WeeklyStatsProcessor {
                     this.logger.debug(`Found ${dailyStats.length} daily stats records for aggregation`);
 
                     // 计算周统计
-                    const weeklyVolume = dailyStats.reduce((sum, stat) => {
+                    const weeklyVolume = dailyStats.reduce((sum: number, stat: any) => {
                         if (!stat.volume) {
                             this.logger.warn(`Missing volume in daily stat for token ${token.symbol} on ${stat.date}`);
                             return sum;
@@ -51,7 +51,7 @@ export class WeeklyStatsProcessor {
                         return sum + stat.volume;
                     }, 0);
                     
-                    const weeklyTxns = dailyStats.reduce((sum, stat) => {
+                    const weeklyTxns = dailyStats.reduce((sum: number, stat: any) => {
                         if (!stat.txnsCount) {
                             this.logger.warn(`Missing txnsCount in daily stat for token ${token.symbol} on ${stat.date}`);
                             return sum;
@@ -61,7 +61,7 @@ export class WeeklyStatsProcessor {
                     
                     // 计算平均价格，处理NaN情况
                     const avgPrice = dailyStats.length > 0 ? 
-                        dailyStats.reduce((sum, stat) => sum + (stat.priceUsd || 0), 0) / dailyStats.length : 0;
+                        dailyStats.reduce((sum: number, stat: any) => sum + (stat.priceUsd || 0), 0) / dailyStats.length : 0;
                     
                     // 确保volumeUsd有效
                     const safeVolumeUsd = isFinite(weeklyVolume * avgPrice) ? weeklyVolume * avgPrice : 0;
@@ -74,8 +74,8 @@ export class WeeklyStatsProcessor {
 
                     const prevYearStats = await this.repository.dailyStatRepo
                         .createQueryBuilder('stat')
-                        .select('SUM(stat.volume) as volume, SUM(stat.txns_count) as txns_count')
-                        .where('stat.token_id = :tokenId', { tokenId: token.id })
+                        .select('SUM(stat.volume) as volume, SUM(stat.txnsCount) as txnsCount')
+                        .where('stat.tokenId = :tokenId', { tokenId: token.id })
                         .andWhere('stat.date BETWEEN :start AND :end', {
                             start: prevYearWeekStart,
                             end: prevYearWeekEnd
@@ -85,8 +85,8 @@ export class WeeklyStatsProcessor {
                     // 计算同比变化
                     const volumeYoY = prevYearStats?.volume ? 
                         ((weeklyVolume - prevYearStats.volume) / prevYearStats.volume * 100) : 0;
-                    const txnsYoY = prevYearStats?.txns_count ?
-                        ((weeklyTxns - prevYearStats.txns_count) / prevYearStats.txns_count * 100) : 0;
+                    const txnsYoY = prevYearStats?.txnsCount ?
+                        ((weeklyTxns - prevYearStats.txnsCount) / prevYearStats.txnsCount * 100) : 0;
 
                     // 保存周统计
                     const weeklyStat = {
@@ -159,8 +159,8 @@ export class WeeklyStatsProcessor {
                 .getMany();
 
             const weeklyEvents = [
-                ...baseEvents.filter(e => JSON.stringify(e.data).includes(`"${token.address}"`)),
-                ...rewardEvents.filter(e => 
+                ...baseEvents.filter((e: any) => JSON.stringify(e.data).includes(`"${token.address}"`)),
+                ...rewardEvents.filter((e: any) => 
                     e.data && 
                     typeof e.data === 'object' &&
                     e.data.currencyId === token.address

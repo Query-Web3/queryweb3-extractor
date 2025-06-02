@@ -1,3 +1,4 @@
+import { v4 as uuidv4 } from 'uuid';
 import { DataSource } from 'typeorm';
 import { BatchLog, BatchStatus, BatchType, LockStatus } from '../../../entities/BatchLog';
 import { Logger } from '../../../utils/logger';
@@ -26,7 +27,7 @@ export class BatchProcessor {
         }
 
         return await batchLogRepo.save(batchLogRepo.create({
-            batchId: 'cli-' + Date.now(),
+            batchId: uuidv4(),
             startTime: new Date(),
             status: BatchStatus.RUNNING,
             type: BatchType.TRANSFORM,

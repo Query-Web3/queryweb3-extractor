@@ -2,6 +2,7 @@ import { TokenStatsRepository } from '../token/tokenStatsRepository';
 import { Logger, LogLevel } from '../../../utils/logger';
 import { getTokenPriceFromOracle } from '../utils';
 import { DimToken } from '../../../entities/DimToken';
+import { FactTokenMonthlyStat } from '../../../entities/FactTokenMonthlyStat';
 import { TokenService } from '../token/TokenService';
 
 export class YearlyStatsProcessor {
@@ -40,13 +41,13 @@ export class YearlyStatsProcessor {
                         .getMany();
 
                     // 计算年统计 - 直接从月统计数据累加
-                    const yearlyVolume = monthlyStats.reduce((sum, stat) => {
+                    const yearlyVolume = monthlyStats.reduce((sum: number, stat: FactTokenMonthlyStat) => {
                         return sum + (stat.volume || 0);
                     }, 0);
-                    const yearlyTxns = monthlyStats.reduce((sum, stat) => sum + stat.txnsCount, 0);
+                    const yearlyTxns = monthlyStats.reduce((sum: number, stat: FactTokenMonthlyStat) => sum + stat.txnsCount, 0);
                     // 计算平均价格，处理NaN情况
                     const avgPrice = monthlyStats.length > 0 ? 
-                        monthlyStats.reduce((sum, stat) => sum + (stat.priceUsd || 0), 0) / monthlyStats.length : 0;
+                        monthlyStats.reduce((sum: number, stat: FactTokenMonthlyStat) => sum + (stat.priceUsd || 0), 0) / monthlyStats.length : 0;
                     const safeAvgPrice = isFinite(avgPrice) ? avgPrice : 0;
 
                     // 确保volumeUsd有效
@@ -60,7 +61,7 @@ export class YearlyStatsProcessor {
 
                     const prevYearStats = await this.repository.monthlyStatRepo
                         .createQueryBuilder('stat')
-                        .select('SUM(stat.volume) as volume, SUM(stat.txns_count) as txns_count')
+                        .select('SUM(stat.volume) as volume, SUM(stat.txnsCount) as txnsCount')
                         .where('stat.token_id = :tokenId', { tokenId: token.id })
                         .andWhere('stat.date BETWEEN :start AND :end', {
                             start: prevYearStart,
@@ -71,8 +72,8 @@ export class YearlyStatsProcessor {
                     // 计算同比变化
                     const volumeYoY = prevYearStats?.volume ? 
                         ((yearlyVolume - prevYearStats.volume) / prevYearStats.volume * 100) : 0;
-                    const txnsYoY = prevYearStats?.txns_count ?
-                        ((yearlyTxns - prevYearStats.txns_count) / prevYearStats.txns_count * 100) : 0;
+                    const txnsYoY = prevYearStats?.txnsCount ?
+                        ((yearlyTxns - prevYearStats.txnsCount) / prevYearStats.txnsCount * 100) : 0;
 
                     // 保存年统计
                     const yearlyStat = {
@@ -137,7 +138,7 @@ export class YearlyStatsProcessor {
                 .andWhere('block.timestamp BETWEEN :start AND :end', { start: lastYear, end: today })
                 .getMany();
 
-            const yearlyVolume = yearlyEvents.reduce((sum, event) => {
+            const yearlyVolume = yearlyEvents.reduce((sum: number, event: any) => {
                 let amount = 0;
                 if (event.section === 'Dex' && event.method === 'Swap') {
                     const amountIn = event.data?.amountIn ? 

@@ -1,3 +1,4 @@
+import { v4 as uuidv4 } from 'uuid';
 import { processBlocks } from './acala/processor';
 import { processBifrostData } from './bifrost/processor';
 import { processHydrationData } from './hydration/processor';
@@ -34,7 +35,7 @@ export async function extractData(
         const batchLogRepo = dataSource.getRepository(BatchLog);
         // Create a new batch log entry with initial values
         batchLog = await batchLogRepo.save(batchLogRepo.create({
-            batchId: 'cli-' + Date.now(),
+            batchId: uuidv4(),
             startTime: new Date(),
             status: BatchStatus.RUNNING,
             type: BatchType.EXTRACT,

@@ -40,14 +40,14 @@ export class MonthlyStatsProcessor {
                         .getMany();
 
                     // 计算月统计 - 直接从周统计数据累加，不需要字符串转换
-                    const monthlyVolume = weeklyStats.reduce((sum, stat) => {
+                    const monthlyVolume = weeklyStats.reduce((sum: number, stat: any) => {
                         return sum + (stat.volume || 0);
                     }, 0);
-                    const monthlyTxns = weeklyStats.reduce((sum, stat) => sum + stat.txnsCount, 0);
+                    const monthlyTxns = weeklyStats.reduce((sum: number, stat: any) => sum + stat.txnsCount, 0);
                     
                     // 计算平均价格，处理NaN情况
                     const avgPrice = weeklyStats.length > 0 ? 
-                        weeklyStats.reduce((sum, stat) => sum + (stat.priceUsd || 0), 0) / weeklyStats.length : 0;
+                        weeklyStats.reduce((sum: number, stat: any) => sum + (stat.priceUsd || 0), 0) / weeklyStats.length : 0;
                     
                     // 确保volumeUsd有效
                     const safeVolumeUsd = isFinite(monthlyVolume * avgPrice) ? monthlyVolume * avgPrice : 0;
@@ -60,7 +60,7 @@ export class MonthlyStatsProcessor {
 
                     const prevYearStats = await this.repository.weeklyStatRepo
                         .createQueryBuilder('stat')
-                        .select('SUM(stat.volume) as volume, SUM(stat.txns_count) as txns_count')
+                        .select('SUM(stat.volume) as volume, SUM(stat.txnsCount) as txnsCount')
                         .where('stat.token_id = :tokenId', { tokenId: token.id })
                         .andWhere('stat.date BETWEEN :start AND :end', {
                             start: prevYearMonthStart,
@@ -71,8 +71,8 @@ export class MonthlyStatsProcessor {
                     // 计算同比变化
                     const volumeYoY = prevYearStats?.volume ? 
                         ((monthlyVolume - prevYearStats.volume) / prevYearStats.volume * 100) : 0;
-                    const txnsYoY = prevYearStats?.txns_count ?
-                        ((monthlyTxns - prevYearStats.txns_count) / prevYearStats.txns_count * 100) : 0;
+                    const txnsYoY = prevYearStats?.txnsCount ?
+                        ((monthlyTxns - prevYearStats.txnsCount) / prevYearStats.txnsCount * 100) : 0;
 
                     // 验证volume值
                     const safeMonthlyVolume = isFinite(monthlyVolume) ? 
@@ -144,7 +144,7 @@ export class MonthlyStatsProcessor {
                 .andWhere('block.timestamp BETWEEN :start AND :end', { start: lastMonth, end: today })
                 .getMany();
 
-            const monthlyVolume = monthlyEvents.reduce((sum, event) => {
+            const monthlyVolume = monthlyEvents.reduce((sum: number, event: any) => {
                 let amount = 0;
                 if (event.section === 'Dex' && event.method === 'Swap') {
                     const amountIn = event.data?.amountIn ? 
