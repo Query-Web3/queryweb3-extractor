@@ -21,14 +21,15 @@ import { initializeDataSource } from './dataSource';
  *          and the height of the last processed block, or null if no blocks were processed.
  */
 export async function extractData(
-    batchLog?: BatchLog | null,
+    batchLogParam?: BatchLog | null,
     startBlock?: number, 
     endBlock?: number,
     timeRange?: string,
     chain: string = 'acala'
 ): Promise<{processedCount: number, lastProcessedHeight: number | null}> {
     // Check if a batch log is provided. If not, create a new one.
-    if (!batchLog) {
+    let batchLog: BatchLog;
+    if (!batchLogParam) {
         // Initialize the database connection
         const dataSource = await initializeDataSource();
         // Get the repository for the BatchLog entity
@@ -43,6 +44,8 @@ export async function extractData(
             processed_block_count: 0,
             last_processed_height: null
         }));
+    } else {
+        batchLog = batchLogParam;
     }
     
     // Calculate the block range if a time range is provided

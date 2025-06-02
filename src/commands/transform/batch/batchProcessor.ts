@@ -2,11 +2,13 @@ import { v4 as uuidv4 } from 'uuid';
 import { DataSource } from 'typeorm';
 import { BatchLog, BatchStatus, BatchType, LockStatus } from '../../../entities/BatchLog';
 import { Logger } from '../../../utils/logger';
+import { getRedisClient } from '../../../common/redis';
 
 export class BatchProcessor {
     constructor(
         private dataSource: DataSource,
-        private logger: Logger
+        private logger: Logger,
+        private redisClient = getRedisClient()
     ) {}
 
     async checkAndCreateBatchLog(lockKey: string, transformIntervalMs: number): Promise<BatchLog | undefined> {
@@ -54,12 +56,63 @@ export class BatchProcessor {
         }
     }
 
+    async updateBlockCount(batchLog: BatchLog, blockNumber: number) {
+        try {
+            const redis = await this.redisClient;
+            const batchKey = `batch:${batchLog.batchId}`;
+            
+            // 更新最后处理高度
+            await redis.hSet(batchKey, 'last_height', blockNumber);
+            
+            // 增加处理区块计数
+            await redis.hIncrBy(batchKey, 'block_count', 1);
+            
+            // 更新数据库中的计数器（可选，减少最终更新的数据量）
+            await this.dataSource.getRepository(BatchLog).update(batchLog.id, {
+                last_processed_height: blockNumber,
+                processed_block_count: () => 'processed_block_count + 1'
+            });
+        } catch (err) {
+            this.logger.error('Failed to update block count in Redis', err as Error);
+            throw err;
+        }
+    }
+
+    async cleanupBatchData(batchLog: BatchLog) {
+        try {
+            const redis = await this.redisClient;
+            const batchKey = `batch:${batchLog.batchId}`;
+            await redis.del(batchKey);
+            this.logger.info(`Cleaned up Redis data for batch ${batchLog.batchId}`);
+        } catch (err) {
+            this.logger.error('Failed to cleanup Redis batch data', err as Error);
+        }
+    }
+
     async finalizeBatchLog(batchLog: BatchLog) {
-        const finalStatus = {
+        let finalStatus = {
             status: BatchStatus.COMPLETED,
             endTime: new Date().toISOString(),
-            lockStatus: LockStatus.UNLOCKED
+            lockStatus: LockStatus.UNLOCKED,
+            last_processed_height: batchLog.last_processed_height,
+            processed_block_count: batchLog.processed_block_count
         };
+
+        try {
+            const redis = await this.redisClient;
+            const batchKey = `batch:${batchLog.batchId}`;
+            
+            // 从Redis获取最终统计
+            const [lastHeight, blockCount] = await redis.hmGet(batchKey, ['last_height', 'block_count']);
+            
+            finalStatus = {
+                ...finalStatus,
+                last_processed_height: lastHeight ? parseInt(lastHeight) : batchLog.last_processed_height,
+                processed_block_count: blockCount ? parseInt(blockCount) : batchLog.processed_block_count
+            };
+        } catch (redisErr) {
+            this.logger.error('Failed to get stats from Redis, using database values', redisErr as Error);
+        }
 
         // First try to update via database
         try {
