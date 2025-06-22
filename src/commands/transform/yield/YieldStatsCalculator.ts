@@ -57,11 +57,11 @@ export class YieldStatsCalculator {
       return 0;
     }
     
-    // Apply reasonable APY limits (0-1000%)
+    // Apply reasonable APY limits (0-1000000%)
     if (apy < 0) return 0;
-    if (apy > 1000) {
-      this.logger.warn(`APY ${apy}% exceeds maximum allowed value, capping at 1000%`);
-      return 1000;
+    if (apy > 1000000) {
+      this.logger.warn(`APY ${apy}% exceeds maximum allowed value, capping at 1000000%`);
+      return 1000000;
     }
     
     return apy;

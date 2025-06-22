@@ -122,12 +122,12 @@ export class YieldStatsProcessor {
           finalApy = 0;
         }
         
-        // Apply reasonable APY limits (0-1000%)
+        // Apply reasonable APY limits (0-1000000%)
         if (finalApy < 0) {
           finalApy = 0;
-        } else if (finalApy > 1000) {
-          this.logger.warn(`APY ${finalApy}% exceeds maximum allowed value, capping at 1000%`);
-          finalApy = 1000;
+        } else if (finalApy > 1000000) {
+          this.logger.warn(`Final APY ${finalApy}% exceeds maximum allowed value, capping at 1000000%`);
+          finalApy = 1000000;
         }
       } catch (error: unknown) {
         if (error instanceof Error) {
@@ -193,7 +193,7 @@ export class YieldStatsProcessor {
     yieldStat.tvlUsd = tvlData.tvlUsd;
     
     // Validate data
-    if (yieldStat.apy < 0 || yieldStat.apy > 1000) {
+    if (yieldStat.apy < 0 || yieldStat.apy > 1000000) {
       throw new Error(`Invalid APY value: ${yieldStat.apy}`);
     }
     if (yieldStat.tvl < 0) {

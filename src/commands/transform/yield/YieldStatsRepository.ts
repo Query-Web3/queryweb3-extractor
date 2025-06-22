@@ -39,17 +39,17 @@ export class YieldStatsRepository {
     
     const repo = this.dataSource.getRepository('FactTokenWeeklyStat');
     let stat = await repo.findOne({
-      where: { token_id: tokenId, date: dateStr }
+      where: { tokenId: tokenId, date: dateStr }
     });
 
     if (!stat) {
       stat = repo.create({
-        token_id: tokenId,
+        tokenId: tokenId,
         date: dateStr,
         volume: '0',
-        volume_usd: '0',
-        txns_count: 0,
-        price_usd: '0'
+        volumeUsd: '0',
+        txnsCount: 0,
+        priceUsd: '0'
       });
     }
 
@@ -65,17 +65,17 @@ export class YieldStatsRepository {
     
     const repo = this.dataSource.getRepository('FactTokenMonthlyStat');
     let stat = await repo.findOne({
-      where: { token_id: tokenId, date: dateStr }
+      where: { tokenId: tokenId, date: dateStr }
     });
 
     if (!stat) {
       stat = repo.create({
-        token_id: tokenId,
+        tokenId: tokenId,
         date: dateStr,
         volume: '0',
-        volume_usd: '0',
-        txns_count: 0,
-        price_usd: '0'
+        volumeUsd: '0',
+        txnsCount: 0,
+        priceUsd: '0'
       });
     }
 
@@ -91,17 +91,17 @@ export class YieldStatsRepository {
     
     const repo = this.dataSource.getRepository('FactTokenYearlyStat');
     let stat = await repo.findOne({
-      where: { token_id: tokenId, date: dateStr }
+      where: { tokenId: tokenId, date: dateStr }
     });
 
     if (!stat) {
       stat = repo.create({
-        token_id: tokenId,
+        tokenId: tokenId,
         date: dateStr,
         volume: '0',
-        volume_usd: '0',
-        txns_count: 0,
-        price_usd: '0'
+        volumeUsd: '0',
+        txnsCount: 0,
+        priceUsd: '0'
       });
     }
 
