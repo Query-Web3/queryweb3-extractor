@@ -153,13 +153,19 @@ const TOKEN_SYMBOL_MAP: Record<string, string> = {
     'DOT': 'ForeignAsset-0',
     'BTC': 'ForeignAsset-1',
     'ETH': 'ForeignAsset-2',
-    'USDT': 'ForeignAsset-3'
+    'USDT': 'ForeignAsset-3',
+    'LDOT': 'ForeignAsset-4',
+    'TAP': 'ForeignAsset-5'
 };
 
 // Get token price by symbol
 export async function getTokenPriceBySymbol(tokenSymbol: string): Promise<number | null> {
-    const tokenAddress = TOKEN_SYMBOL_MAP[tokenSymbol] || tokenSymbol;
-    return getTokenPriceFromOracle(tokenAddress);
+    const tokenAddress = TOKEN_SYMBOL_MAP[tokenSymbol];
+    if (tokenAddress) {
+        return getTokenPriceFromOracle(tokenAddress);
+    }
+    // Fallback to ACA price for unknown symbols
+    return getTokenPriceFromOracle('ACA');
 }
 
 // Get token price from oracle APIs
