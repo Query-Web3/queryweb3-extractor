@@ -25,17 +25,12 @@ export async function transformData(batchLog?: BatchLog) {
     const TRANSFORM_INTERVAL_MS = process.env.TRANSFORM_INTERVAL_MS ? Number(process.env.TRANSFORM_INTERVAL_MS) : 3600000;
     const LOCK_KEY = 'transform_data_lock';
 
-    // Initialize data source once and reuse
+    // Initialize data source with retry logic
     let dataSource: DataSource;
     try {
         dataSource = await initializeDataSource();
-        if (!dataSource.isInitialized) {
-            logger.info('Initializing database connection...');
-            await dataSource.initialize();
-            logger.info('Database connection established');
-        }
     } catch (err) {
-        logger.error('Failed to initialize data source', err as Error);
+        logger.error('Failed to initialize data source after retries', err as Error);
         throw err;
     }
 
