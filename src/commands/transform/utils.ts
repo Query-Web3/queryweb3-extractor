@@ -4,6 +4,7 @@ import { Logger, LogLevel } from '../../utils/logger';
 import WebSocket, { MessageEvent } from 'ws';
 import { ApiPromise, WsProvider } from '@polkadot/api';
 import { options } from '@acala-network/api';
+import { TokenRepository } from './token/TokenRepository';
 
 // Redis price cache key
 const PRICE_CACHE_KEY = 'token:price:cache';
@@ -146,25 +147,33 @@ async function getTokenPrice(tokenAddress: string): Promise<number | null> {
     }
 }
 
-// Symbol to address mapping
-const TOKEN_SYMBOL_MAP: Record<string, string> = {
-    'ACA': 'ACA',
-    'AUSD': 'AUSD',
-    'DOT': 'ForeignAsset-0',
-    'BTC': 'ForeignAsset-1',
-    'ETH': 'ForeignAsset-2',
-    'USDT': 'ForeignAsset-3',
-    'LDOT': 'ForeignAsset-4',
-    'TAP': 'ForeignAsset-5'
-};
+// Token repository for fetching token data
+const tokenRepo = new TokenRepository();
+
+// Get token symbol to address mapping from database
+async function getTokenSymbolMap(): Promise<Record<string, string>> {
+    const tokens = await tokenRepo.getAllTokens();
+    const symbolMap: Record<string, string> = {};
+    
+    for (const token of tokens) {
+        symbolMap[token.symbol] = token.address;
+    }
+    
+    return symbolMap;
+}
 
 // Get token price by symbol
 export async function getTokenPriceBySymbol(tokenSymbol: string): Promise<number | null> {
-    const tokenAddress = TOKEN_SYMBOL_MAP[tokenSymbol];
-    if (tokenAddress) {
+    const symbolMap = await getTokenSymbolMap();
+    const tokenAddress = symbolMap[tokenSymbol];
+    
+    // Only use original logic for these specific symbols
+    const supportedSymbols = new Set(['ACA', 'AUSD', 'DOT', 'LDOT', 'USDT', 'TAP']);
+    
+    if (tokenAddress && supportedSymbols.has(tokenSymbol)) {
         return getTokenPriceFromOracle(tokenAddress);
     }
-    // Fallback to ACA price for unknown symbols
+    // Fallback to ACA price for all other symbols
     return getTokenPriceFromOracle('ACA');
 }
 
