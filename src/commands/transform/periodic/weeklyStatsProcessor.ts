@@ -1,6 +1,6 @@
 import { TokenStatsRepository } from '../token/tokenStatsRepository';
 import { Logger, LogLevel } from '../../../utils/logger';
-import { getTokenPriceFromOracle } from '../utils';
+import { getTokenPriceBySymbol } from '../utils';
 import { DimToken } from '../../../entities/DimToken';
 import { TokenService } from '../token/TokenService';
 
@@ -198,7 +198,7 @@ export class WeeklyStatsProcessor {
                 this.logger.warn('Failed to update Redis counter, using direct count only', e as Error);
             }
 
-            const tokenPrice = await getTokenPriceFromOracle(token.address) ?? 1.0;
+            const tokenPrice = await getTokenPriceBySymbol(token.symbol) ?? 1.0;
             const safeTokenPrice = isFinite(tokenPrice) ? tokenPrice : 1.0;
 
             const tokenRecord = await this.repository.tokenRepo.findOne({

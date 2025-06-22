@@ -1,7 +1,7 @@
 import { TokenStatsRepository } from '../token/tokenStatsRepository';
 import { Logger, LogLevel } from '../../../utils/logger';
 import { TokenService } from '../token/TokenService';
-import { getTokenPriceFromOracle } from '../utils';
+import { getTokenPriceBySymbol } from '../utils';
 import { DimToken } from '../../../entities/DimToken';
 import { FactTokenDailyStat } from '../../../entities/FactTokenDailyStat';
 import { DataSource, QueryRunner } from 'typeorm';
@@ -110,7 +110,7 @@ export class DailyStatsProcessor {
     ): Promise<boolean> {
         try {
             // 1. 获取token价格
-            const tokenPrice = await getTokenPriceFromOracle(token.address) ?? 1.0;
+            const tokenPrice = await getTokenPriceBySymbol(token.symbol) ?? 1.0;
             const safeTokenPrice = isFinite(tokenPrice) ? tokenPrice : 1.0;
 
             // 2. 准备统计数据

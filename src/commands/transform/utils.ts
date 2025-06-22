@@ -146,6 +146,22 @@ async function getTokenPrice(tokenAddress: string): Promise<number | null> {
     }
 }
 
+// Symbol to address mapping
+const TOKEN_SYMBOL_MAP: Record<string, string> = {
+    'ACA': 'ACA',
+    'AUSD': 'AUSD',
+    'DOT': 'ForeignAsset-0',
+    'BTC': 'ForeignAsset-1',
+    'ETH': 'ForeignAsset-2',
+    'USDT': 'ForeignAsset-3'
+};
+
+// Get token price by symbol
+export async function getTokenPriceBySymbol(tokenSymbol: string): Promise<number | null> {
+    const tokenAddress = TOKEN_SYMBOL_MAP[tokenSymbol] || tokenSymbol;
+    return getTokenPriceFromOracle(tokenAddress);
+}
+
 // Get token price from oracle APIs
 export async function getTokenPriceFromOracle(tokenAddress: string): Promise<number | null> {
     const logger = Logger.getInstance();

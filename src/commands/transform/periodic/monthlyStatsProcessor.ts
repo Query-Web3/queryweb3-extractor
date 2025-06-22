@@ -1,6 +1,6 @@
 import { TokenStatsRepository } from '../token/tokenStatsRepository';
 import { Logger, LogLevel } from '../../../utils/logger';
-import { getTokenPriceFromOracle } from '../utils';
+import { getTokenPriceBySymbol } from '../utils';
 import { DimToken } from '../../../entities/DimToken';
 import { TokenService } from '../token/TokenService';
 
@@ -180,7 +180,7 @@ export class MonthlyStatsProcessor {
             }
 
             // Get token price from oracle (use default 1.0 if not available)
-            const tokenPrice = await getTokenPriceFromOracle(token.address) ?? 1.0;
+            const tokenPrice = await getTokenPriceBySymbol(token.symbol) ?? 1.0;
             const safeTokenPrice = isFinite(tokenPrice) ? tokenPrice : 1.0;
 
             // Find token in dim_tokens table by symbol or name

@@ -36,10 +36,37 @@ export class YieldStatsService {
   }
 
   async getTokenPrice(tokenId: number): Promise<number> {
-    const token = await this.dataSource.getRepository(DimToken).findOne({
-      where: { id: tokenId }
-    });
-    return (token as any)?.priceUsd || 1;
+    try {
+      const token = await this.dataSource.getRepository(DimToken).findOne({
+        where: { id: tokenId }
+      });
+      
+      if (!token) {
+        this.logger.warn(`Token ${tokenId} not found, using default price`);
+        return 1;
+      }
+
+      // Try to get price from token entity first
+      if ((token as any)?.priceUsd) {
+        return parseFloat((token as any).priceUsd);
+      }
+
+      // Fallback to get price by symbol
+      if (token.symbol) {
+        const { getTokenPriceBySymbol } = await import('../utils');
+        const price = await getTokenPriceBySymbol(token.symbol);
+        if (price !== null) {
+          return price;
+        }
+      }
+
+      // Fallback to default price
+      this.logger.warn(`No price found for token ${tokenId}, using default price`);
+      return 1;
+    } catch (error) {
+      this.logger.error(`Failed to get price for token ${tokenId}`, error as Error);
+      return 1; // Return safe default value
+    }
   }
 
   async calculateAPY(token: DimToken): Promise<{apy: number}> {
@@ -65,9 +92,9 @@ export class YieldStatsService {
 
     // 模拟计算volume数据 - 实际项目中会从链上获取
     stat.volume = '1000'; // 默认值
-    stat.volume_usd = '1000'; // 默认值
-    stat.txns_count = 10; // 默认值
-    stat.price_usd = (tokenData as any).priceUsd || '1'; // 使用token的价格
+    stat.volumeUsd = '1000'; // 默认值
+    stat.txnsCount = 10; // 默认值
+    stat.priceUsd = (tokenData as any).priceUsd || '1'; // 使用token的价格
 
     // 计算同比增长率 (简化实现)
     stat.volume_yoy = '0.1'; // 10% 同比增长
