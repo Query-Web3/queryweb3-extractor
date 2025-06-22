@@ -75,6 +75,7 @@ pnpm start transform -- --resume
 
 # Execute standard transformation
 pnpm start transform
+```
 
 ## Logic chart
 
