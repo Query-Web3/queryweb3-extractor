@@ -14,7 +14,12 @@ export class YieldStatsRepository {
   }
 
   async saveDailyStat(stat: FactYieldStat): Promise<FactYieldStat> {
-    return this.yieldStatRepo.save(stat);
+    const result = await this.yieldStatRepo.upsert(stat, {
+      conflictPaths: ['tokenId', 'date'],
+      skipUpdateIfNoValuesChanged: true,
+      upsertType: 'on-conflict-do-update'
+    });
+    return result.generatedMaps[0] as FactYieldStat;
   }
 
   async findExistingDailyStat(tokenId: number, date: Date): Promise<FactYieldStat | null> {
@@ -57,7 +62,11 @@ export class YieldStatsRepository {
   }
 
   async saveWeeklyStat(stat: any): Promise<void> {
-    await this.dataSource.getRepository('FactTokenWeeklyStat').save(stat);
+    await this.dataSource.getRepository('FactTokenWeeklyStat').upsert(stat, {
+      conflictPaths: ['tokenId', 'date'],
+      skipUpdateIfNoValuesChanged: true,
+      upsertType: 'on-conflict-do-update'
+    });
   }
 
   async findOrCreateMonthlyStat(tokenId: number, date: Date): Promise<any> {
@@ -83,7 +92,11 @@ export class YieldStatsRepository {
   }
 
   async saveMonthlyStat(stat: any): Promise<void> {
-    await this.dataSource.getRepository('FactTokenMonthlyStat').save(stat);
+    await this.dataSource.getRepository('FactTokenMonthlyStat').upsert(stat, {
+      conflictPaths: ['tokenId', 'date'],
+      skipUpdateIfNoValuesChanged: true,
+      upsertType: 'on-conflict-do-update'
+    });
   }
 
   async findOrCreateYearlyStat(tokenId: number, date: Date): Promise<any> {
@@ -109,6 +122,10 @@ export class YieldStatsRepository {
   }
 
   async saveYearlyStat(stat: any): Promise<void> {
-    await this.dataSource.getRepository('FactTokenYearlyStat').save(stat);
+    await this.dataSource.getRepository('FactTokenYearlyStat').upsert(stat, {
+      conflictPaths: ['tokenId', 'date'],
+      skipUpdateIfNoValuesChanged: true,
+      upsertType: 'on-conflict-do-update'
+    });
   }
 }
